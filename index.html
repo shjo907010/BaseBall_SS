@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10231d">
+  <title>SHORTSTOP 3D | 유격수 수비 시뮬레이터</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #10231d;
+      --panel: rgba(9, 22, 18, .78);
+      --line: rgba(236, 247, 232, .18);
+      --text: #f4f7ef;
+      --muted: #b4c2b4;
+      --lime: #c6ef79;
+      --mint: #6bd5a1;
+      --gold: #f2ca75;
+      --red: #ff887d;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--text); font-family: Inter, Pretendard, "Noto Sans KR", system-ui, sans-serif; }
+    button { font: inherit; }
+    #game { position: fixed; inset: 0; background: #80b9d4; }
+    #game canvas { display: block; width: 100%; height: 100%; outline: none; }
+    #hud { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+    .panel { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); backdrop-filter: blur(10px); box-shadow: 0 8px 28px rgba(0,0,0,.16); }
+    #brand { position: absolute; top: 16px; left: 18px; padding: 10px 13px; font-size: 13px; font-weight: 950; letter-spacing: .16em; }
+    #brand span { color: var(--lime); }
+    #brand small { margin-left: 5px; color: #c4d4c7; font-size: 9px; letter-spacing: .12em; }
+    #stats { position: absolute; top: 16px; right: 18px; display: flex; gap: 7px; }
+    .stat { min-width: 82px; padding: 9px 12px; text-align: center; color: var(--muted); font-size: 10px; }
+    .stat b { display: block; margin-top: 3px; color: white; font-size: 18px; font-variant-numeric: tabular-nums; }
+    #message { position: absolute; top: 16%; left: 50%; transform: translateX(-50%); max-width: min(90vw, 660px); text-align: center; font-size: clamp(20px, 3.8vw, 38px); line-height: 1.1; font-weight: 950; letter-spacing: .035em; text-shadow: 0 3px 14px rgba(0,0,0,.52); white-space: nowrap; }
+    #submessage { margin-top: 8px; font-size: 12px; line-height: 1.5; font-weight: 650; letter-spacing: 0; color: #f1f5eb; }
+    #crosshair { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; transform: translate(-50%,-50%); opacity: .8; }
+    #crosshair::before, #crosshair::after { content: ""; position: absolute; background: #fff; border-radius: 2px; box-shadow: 0 1px 5px #0009; }
+    #crosshair::before { width: 2px; height: 18px; top: 0; left: 8px; }
+    #crosshair::after { width: 18px; height: 2px; top: 8px; left: 0; }
+    #reticle { position: absolute; top: 50%; left: 50%; width: 56px; height: 56px; border: 2px solid var(--lime); border-radius: 50%; transform: translate(-50%,-50%); opacity: 0; box-shadow: 0 0 22px rgba(198,239,121,.35), inset 0 0 14px rgba(198,239,121,.12); transition: opacity .08s, border-color .08s; }
+    #help { position: absolute; left: 18px; bottom: 18px; max-width: min(470px, calc(100vw - 36px)); padding: 11px 14px; color: #dce8dc; font-size: 10px; line-height: 1.9; }
+    #help b { color: white; }
+    .key { display: inline-grid; min-width: 23px; height: 21px; margin: 0 2px; padding: 0 5px; place-items: center; border: 1px solid #ffffff44; border-bottom-width: 2px; border-radius: 5px; background: #ffffff12; color: #fff; font-size: 9px; font-weight: 850; }
+    #status { position: absolute; right: 18px; bottom: 18px; min-width: 185px; padding: 12px 13px; text-align: right; color: #dce8dc; font-size: 10px; }
+    #phase { font-weight: 850; color: var(--lime); }
+    #distance { margin-top: 5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    #meterWrap { width: 160px; height: 7px; margin: 8px 0 0 auto; overflow: hidden; border-radius: 99px; background: #ffffff28; }
+    #meter { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #e07d65, #f2ca75, #6bd5a1); transition: width .07s linear; }
+    #toast { position: absolute; top: 25%; left: 50%; transform: translate(-50%,-8px); opacity: 0; padding: 9px 15px; border: 1px solid #ffffff30; border-radius: 999px; background: rgba(9,22,18,.88); font-size: 12px; font-weight: 850; transition: opacity .18s, transform .18s; white-space: nowrap; }
+    #toast.show { opacity: 1; transform: translate(-50%,0); }
+    #overlay, #result { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 20px; background: linear-gradient(115deg, rgba(3,13,10,.88), rgba(3,13,10,.45), rgba(3,13,10,.75)); backdrop-filter: blur(5px); }
+    .card { width: min(560px, 100%); padding: clamp(23px, 5vw, 40px); border: 1px solid #ffffff2a; border-radius: 25px; background: linear-gradient(145deg, rgba(15,37,28,.97), rgba(7,18,15,.97)); box-shadow: 0 28px 100px rgba(0,0,0,.45); }
+    .eyebrow { color: var(--lime); font-size: 10px; font-weight: 950; letter-spacing: .2em; }
+    h1 { margin: 15px 0 10px; font-size: clamp(42px, 9vw, 65px); line-height: .95; letter-spacing: -.065em; }
+    h1 span { color: var(--lime); }
+    .desc { margin: 16px 0 22px; color: #c1d0c2; font-size: 13px; line-height: 1.85; word-break: keep-all; }
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; }
+    .primary, .secondary { min-height: 45px; padding: 0 17px; border-radius: 11px; cursor: pointer; font-weight: 900; transition: transform .14s, filter .14s; }
+    .primary { border: 0; background: var(--lime); color: #172414; }
+    .secondary { border: 1px solid #ffffff35; background: #ffffff0e; color: white; }
+    .primary:hover, .secondary:hover { transform: translateY(-2px); filter: brightness(1.06); }
+    .foot { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 23px; padding-top: 15px; border-top: 1px solid var(--line); color: #8fa494; font-size: 9px; letter-spacing: .1em; }
+    .foot b { color: #e6f0e4; }
+    #result { display: none; z-index: 6; }
+    #result .card { width: min(430px, 100%); text-align: center; }
+    #resultTitle { margin: 0 0 9px; font-size: 34px; font-weight: 1000; }
+    #resultText { margin: 0 0 20px; color: #c7d5c8; font-size: 13px; line-height: 1.7; }
+    .hidden { display: none !important; }
+    @media (max-width: 680px) {
+      #brand { top: 9px; left: 9px; padding: 8px 10px; }
+      #stats { top: 55px; right: 9px; gap: 4px; }
+      .stat { min-width: 62px; padding: 7px 8px; font-size: 9px; }
+      .stat b { font-size: 15px; }
+      #message { top: 17%; }
+      #help { left: 8px; bottom: 8px; padding: 8px 10px; font-size: 9px; }
+      #status { right: 8px; bottom: 8px; min-width: 145px; padding: 9px; }
+      #meterWrap { width: 120px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game" aria-label="SHORTSTOP 3D 야구장"></div>
+  <div id="hud">
+    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING</small></div>
+    <div id="stats">
+      <div class="panel stat">포구 성공<b id="catchCount">0</b></div>
+      <div class="panel stat">포구 실패<b id="missCount">0</b></div>
+      <div class="panel stat">아웃<b id="outCount">0</b></div>
+      <div class="panel stat">점수<b id="scoreCount">0</b></div>
+    </div>
+    <div id="message">내야를 확인하자<div id="submessage">수비 연습 시작을 눌러 입장하세요.</div></div>
+    <div id="crosshair"></div><div id="reticle"></div>
+    <div id="help" class="panel">
+      <b>이동</b> <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
+      <br><b>질주</b> <span class="key">SHIFT</span>　<b>다이빙</b> <span class="key">SPACE</span>
+      <br><b>포구</b> <span class="key">CLICK</span>　<b>타구</b> <span class="key">F</span>
+      <br><b>1루 송구</b> <span class="key">ENTER</span>　<b>송구 릴리스</b> <span class="key">ENTER</span>
+      <br><b>시점</b> 마우스 이동　<b>잠금 해제</b> ESC
+    </div>
+    <div id="status" class="panel">
+      <div id="phase">준비 완료</div>
+      <div id="distance">공과 거리: --</div>
+      <div id="meterWrap"><div id="meter"></div></div>
+    </div>
+    <div id="toast">수비 연습을 시작합니다.</div>
+  </div>
+
+  <section id="overlay">
+    <div class="card">
+      <div class="eyebrow">BASEBALL FIELDING SIMULATOR · THREE.JS</div>
+      <h1>OWN THE<br><span>INFIELD.</span></h1>
+      <p class="desc">유격수의 눈으로 실제 3D 야구장을 누벼 보세요. WASD로 타구를 쫓고, 공이 글러브에 도달하는 순간 클릭해 포구하세요. 급한 타구는 SPACE로 다이빙할 수 있습니다.</p>
+      <div class="actions">
+        <button id="startBtn" class="primary" type="button">수비 연습 시작 →</button>
+        <button id="howBtn" class="secondary" type="button">조작 방법</button>
+      </div>
+      <div class="foot"><span><b>CAMERA</b> FIRST PERSON</span><span><b>GRAPHICS</b> LOW-POLY 3D</span><span><b>ENGINE</b> THREE.JS</span></div>
+    </div>
+  </section>
+
+  <section id="result">
+    <div class="card">
+      <div id="resultTitle">GOOD CATCH!</div>
+      <p id="resultText">좋은 수비야!</p>
+      <button id="nextBtn" class="primary" type="button">다음 타구 시작</button>
+    </div>
+  </section>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js';
+
+    // ------------------------------------------------------------
+    // 1. 기본 장면과 렌더러
+    // ------------------------------------------------------------
+    const mount = document.querySelector('#game');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x91c9e8);
+    scene.fog = new THREE.Fog(0x91c9e8, 68, 165);
+
+    const camera = new THREE.PerspectiveCamera(76, innerWidth / innerHeight, 0.1, 260);
+    camera.rotation.order = 'YXZ';
+
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    } catch (error) {
+      document.querySelector('#message').textContent = '3D 그래픽을 시작할 수 없습니다.';
+      document.querySelector('#submessage').textContent = '브라우저의 WebGL 지원 여부를 확인해 주세요.';
+      throw error;
+    }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.7));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    mount.appendChild(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight(0xe4f5ff, 0x59633d, 1.65));
+    const sun = new THREE.DirectionalLight(0xfff0d1, 2.3);
+    sun.position.set(-32, 48, 22);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1536, 1536);
+    sun.shadow.camera.left = -65;
+    sun.shadow.camera.right = 65;
+    sun.shadow.camera.top = 65;
+    sun.shadow.camera.bottom = -65;
+    sun.shadow.bias = -0.00025;
+    scene.add(sun);
+
+    const material = (color, roughness = 0.92, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness, ...extra });
+    const grassMat = material(0x438a43);
+    const stripeMat = material(0x3a7e3b, 1, { transparent: true, opacity: 0.23 });
+    const dirtMat = material(0xb77b4b);
+    const dirtDarkMat = material(0x9b643d);
+    const chalkMat = material(0xf4f0dc);
+    const baseMat = material(0xf4f2e8);
+    const fenceMat = material(0x294d3b);
+    const standMat = material(0x687d89);
+    const seatMat = material(0x36566a);
+    const skinMat = material(0xb77c55);
+    const gloveMat = material(0x67371f);
+
+    function addBox(parent, w, h, d, mat, x, y, z, cast = true) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = cast;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    }
+    function addCylinderBetween(parent, a, b, radius, mat) {
+      const start = new THREE.Vector3(...a);
+      const end = new THREE.Vector3(...b);
+      const delta = new THREE.Vector3().subVectors(end, start);
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, delta.length(), 7), mat);
+      mesh.position.copy(start).add(end).multiplyScalar(0.5);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+      mesh.castShadow = true;
+      parent.add(mesh);
+      return mesh;
+    }
+    function addGroundPlane(width, depth, mat, x = 0, z = 0) {
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(x, -0.04, z);
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      return mesh;
+    }
+
+    // ------------------------------------------------------------
+    // 2. 저폴리곤 야구장 제작
+    // 좌표 규칙: 홈은 z=-24, 2루는 z=12, 유격수는 그 사이에 위치
+    // ------------------------------------------------------------
+    addGroundPlane(220, 220, grassMat, 0, -8);
+    for (let i = -8; i <= 8; i++) {
+      const stripe = new THREE.Mesh(new THREE.PlaneGeometry(5.5, 175), stripeMat);
+      stripe.rotation.x = -Math.PI / 2;
+      stripe.position.set(i * 10, -0.025, -24);
+      stripe.receiveShadow = true;
+      scene.add(stripe);
+    }
+
+    const infieldShape = new THREE.Shape();
+    infieldShape.moveTo(0, 24);
+    infieldShape.lineTo(21, 5);
+    infieldShape.lineTo(0, -14);
+    infieldShape.lineTo(-21, 5);
+    infieldShape.closePath();
+    const infield = new THREE.Mesh(new THREE.ShapeGeometry(infieldShape), dirtMat);
+    infield.rotation.x = -Math.PI / 2;
+    infield.position.y = -0.015;
+    infield.receiveShadow = true;
+    scene.add(infield);
+
+    // 베이스라인용 밝은 흙길을 얇게 배치
+    const pathMat = material(0xc28a5a);
+    function addPath(x1, z1, x2, z2, width = 2.0) {
+      const dx = x2 - x1, dz = z2 - z1;
+      const length = Math.hypot(dx, dz);
+      const path = new THREE.Mesh(new THREE.PlaneGeometry(width, length), pathMat);
+      path.rotation.x = -Math.PI / 2;
+      path.rotation.z = -Math.atan2(dx, dz);
+      path.position.set((x1 + x2) / 2, 0.006, (z1 + z2) / 2);
+      path.receiveShadow = true;
+      scene.add(path);
+    }
+    const HOME = new THREE.Vector3(0, 0, -24);
+    const FIRST = new THREE.Vector3(18, 0, -6);
+    const SECOND = new THREE.Vector3(0, 0, 12);
+    const THIRD = new THREE.Vector3(-18, 0, -6);
+    addPath(HOME.x, HOME.z, FIRST.x, FIRST.z, 2.5);
+    addPath(FIRST.x, FIRST.z, SECOND.x, SECOND.z, 2.5);
+    addPath(SECOND.x, SECOND.z, THIRD.x, THIRD.z, 2.5);
+    addPath(THIRD.x, THIRD.z, HOME.x, HOME.z, 2.5);
+
+    function makeBase(x, z, isHome = false) {
+      const group = new THREE.Group();
+      group.position.set(x, 0.07, z);
+      scene.add(group);
+      if (isHome) {
+        const shape = new THREE.Shape();
+        shape.moveTo(-0.65, 0.55); shape.lineTo(0.65, 0.55); shape.lineTo(0.65, -0.15);
+        shape.lineTo(0, -0.68); shape.lineTo(-0.65, -0.15); shape.closePath();
+        const plate = new THREE.Mesh(new THREE.ShapeGeometry(shape), baseMat);
+        plate.rotation.x = -Math.PI / 2;
+        plate.position.y = 0.025;
+        group.add(plate);
+      } else {
+        const pad = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.16, 1.15), baseMat);
+        pad.rotation.y = Math.PI / 4;
+        pad.castShadow = true;
+        pad.receiveShadow = true;
+        group.add(pad);
+      }
+      return group;
+    }
+    makeBase(HOME.x, HOME.z, true);
+    makeBase(FIRST.x, FIRST.z);
+    makeBase(SECOND.x, SECOND.z);
+    makeBase(THIRD.x, THIRD.z);
+
+    // 파울라인과 내야 라인
+    const lineSegments = [
+      [HOME.x, 0.035, HOME.z, -48, 0.035, -92],
+      [HOME.x, 0.035, HOME.z, 48, 0.035, -92],
+      [HOME.x, 0.03, HOME.z, FIRST.x, 0.03, FIRST.z],
+      [FIRST.x, 0.03, FIRST.z, SECOND.x, 0.03, SECOND.z],
+      [SECOND.x, 0.03, SECOND.z, THIRD.x, 0.03, THIRD.z],
+      [THIRD.x, 0.03, THIRD.z, HOME.x, 0.03, HOME.z]
+    ];
+    for (const p of lineSegments) addCylinderBetween(scene, [p[0], p[1], p[2]], [p[3], p[4], p[5]], 0.055, chalkMat);
+
+    // 투수 마운드와 고무판
+    const mound = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.6, 0.36, 28), dirtDarkMat);
+    mound.position.set(0, 0.12, -7);
+    mound.castShadow = true; mound.receiveShadow = true; scene.add(mound);
+    addBox(scene, 1.2, 0.12, 0.32, baseMat, 0, 0.36, -7, true);
+
+    // 외야 펜스와 관중석
+    for (let x = -52; x <= 52; x += 5.5) {
+      addBox(scene, 0.2, 3.9, 0.2, fenceMat, x, 1.95, -88, false);
+    }
+    addBox(scene, 108, 0.22, 0.25, fenceMat, 0, 3.7, -88, false);
+    const stand = addBox(scene, 116, 9.5, 8, standMat, 0, 5.6, -99, false);
+    for (let row = 0; row < 5; row++) {
+      addBox(scene, 112 - row * 2, 0.45, 1.2, seatMat, 0, 1.5 + row * 1.45, -94 - row * 1.1, false);
+    }
+    // 관중석 색 점들: 낮은 폴리곤 장식용 좌석 블록
+    const crowdMats = [material(0x456d86), material(0xa6b2ad), material(0xd2a76e), material(0x36566c)];
+    for (let i = 0; i < 95; i++) {
+      const x = THREE.MathUtils.randFloat(-53, 53);
+      const y = THREE.MathUtils.randFloat(2.0, 8.5);
+      const z = THREE.MathUtils.randFloat(-103, -96);
+      addBox(scene, 0.45, 0.35, 0.45, crowdMats[i % crowdMats.length], x, y, z, false);
+    }
+    // 조명 타워
+    for (const x of [-58, 58]) {
+      addBox(scene, 0.5, 25, 0.5, material(0x56656b), x, 12.5, -64, false);
+      const lamp = addBox(scene, 5.5, 0.4, 1.4, material(0xf5f0d8, 0.4, { emissive: 0xf2e4bd, emissiveIntensity: 0.3 }), x, 25.2, -64, false);
+    }
+
+    // ------------------------------------------------------------
+    // 3. 단순한 3D 선수 모델(타자와 투수)
+    // ------------------------------------------------------------
+    function makePlayerModel(x, z, jerseyColor, facing = 0) {
+      const group = new THREE.Group();
+      group.position.set(x, 0, z);
+      group.rotation.y = facing;
+      scene.add(group);
+      const jersey = material(jerseyColor);
+      const pants = material(0xe7e8df);
+      const helmet = material(0x202831);
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.7, 3, 7), jersey);
+      torso.position.y = 1.28; torso.castShadow = true; group.add(torso);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), skinMat);
+      head.position.y = 2.0; head.castShadow = true; group.add(head);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2), helmet);
+      cap.position.y = 2.13; group.add(cap);
+      for (const side of [-1, 1]) {
+        const leg = addBox(group, 0.2, 0.78, 0.23, pants, side * 0.16, 0.43, 0, true);
+        leg.rotation.z = side * -0.06;
+      }
+      const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.48, 3, 6), skinMat);
+      arm.position.set(0.38, 1.35, 0.02); arm.rotation.z = -0.45; group.add(arm);
+      return group;
+    }
+    const batterModel = makePlayerModel(1.55, -25.5, 0x243b60, Math.PI * 0.1); // 타자
+    const pitcherModel = makePlayerModel(0, -7.8, 0xc9d4dc, Math.PI); // 투수
+    const firstBaseman = makePlayerModel(18.4, -6.0, 0x315c83, Math.PI * 0.5); // 1루수
+    const runnerModel = makePlayerModel(0.2, -24.0, 0xb84f48, -Math.PI * 0.5); // 타자 주자
+    runnerModel.visible = false;
+    const runnerStart = new THREE.Vector3(0.2, 0, -24.0);
+    const runnerTarget = new THREE.Vector3(17.2, 0, -6.2);
+
+    // 타자의 배트
+    const bat = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.09, 1.5, 7), material(0x986b40));
+    bat.position.set(1.05, 1.9, -25.15); bat.rotation.z = -0.8; bat.castShadow = true; scene.add(bat);
+
+    // ------------------------------------------------------------
+    // 4. 1인칭 유격수와 글러브
+    // ------------------------------------------------------------
+    const cameraRig = new THREE.Group();
+    camera.add(cameraRig);
+    scene.add(camera);
+
+    // 왼팔과 글러브를 화면 왼쪽 아래에 배치하고, 오른손은 보조로 표현
+    const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.15, 0.66, 8), skinMat);
+    leftArm.position.set(-0.42, -0.43, -0.78);
+    leftArm.rotation.z = 0.35;
+    cameraRig.add(leftArm);
+
+    const glove = new THREE.Group();
+    glove.position.set(-0.47, -0.53, -1.02);
+    glove.rotation.set(0.12, -0.18, 0.28);
+    cameraRig.add(glove);
+    const glovePalm = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.34, 0.19), gloveMat);
+    glovePalm.castShadow = true; glove.add(glovePalm);
+    for (let i = 0; i < 4; i++) {
+      const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.21, 3, 6), gloveMat);
+      finger.position.set(-0.15 + i * 0.1, 0.25, 0.015);
+      finger.rotation.z = (i - 1.5) * -0.12;
+      glove.add(finger);
+    }
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.23, 3, 6), gloveMat);
+    thumb.position.set(-0.28, 0.01, 0.02); thumb.rotation.z = -0.85; glove.add(thumb);
+    const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.13, 0.55, 8), skinMat);
+    rightArm.position.set(0.48, -0.59, -0.92); rightArm.rotation.z = -0.38; cameraRig.add(rightArm);
+    const rightHand = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 7), skinMat);
+    rightHand.position.set(0.57, -0.86, -1.02); cameraRig.add(rightHand);
+
+    // ------------------------------------------------------------
+    // 5. 게임 상태와 UI 참조
+    // ------------------------------------------------------------
+    const $ = (selector) => document.querySelector(selector);
+    const ui = {
+      overlay: $('#overlay'), result: $('#result'), resultTitle: $('#resultTitle'), resultText: $('#resultText'),
+      message: $('#message'), sub: $('#submessage'), phase: $('#phase'), distance: $('#distance'), meter: $('#meter'),
+      reticle: $('#reticle'), toast: $('#toast'), catches: $('#catchCount'), misses: $('#missCount'), outs: $('#outCount'), score: $('#scoreCount')
+    };
+    const player = {
+      position: new THREE.Vector3(-5.5, 0, 2.5),
+      yaw: 0,
+      pitch: 0,
+      isDiving: false,
+      diveElapsed: 0,
+      diveDuration: 0.72,
+      diveCooldown: 0,
+      diveDirection: new THREE.Vector3(0, 0, -1),
+      bob: 0
+    };
+    const gameState = {
+      started: false,
+      pointerLocked: false,
+      phase: 'ready',
+      ball: null,
+      ballShadow: null,
+      targetMarker: null,
+      ballAge: 0,
+      ballDuration: 0,
+      ballStart: new THREE.Vector3(),
+      ballTarget: new THREE.Vector3(),
+      ballType: '땅볼',
+      ballArc: 0,
+      throwAge: 0,
+      throwDuration: 0.82,
+      throwClock: 0,
+      throwMeterValue: 0.5,
+      throwAimDot: 0,
+      throwTarget: new THREE.Vector3(),
+      throwStart: new THREE.Vector3(),
+      throwSpread: 0,
+      runnerProgress: 0,
+      runnerDuration: 3.65,
+      catches: 0,
+      misses: 0,
+      outs: 0,
+      score: 0,
+      attempts: 0,
+      toastTimer: 0
+    };
+    const keys = new Set();
+    const clock = new THREE.Clock();
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const moveVector = new THREE.Vector3();
+    const tempVector = new THREE.Vector3();
+    const BALL_RADIUS = 0.22;
+    const NORMAL_CATCH_RADIUS = 1.7;
+    const DIVE_CATCH_RADIUS = 3.35;
+    const PITCH_LIMIT = 1.52;
+
+    function setMessage(main, sub = '') {
+      ui.message.firstChild.textContent = main;
+      ui.sub.textContent = sub;
+    }
+    function setPhase(phase, label) {
+      gameState.phase = phase;
+      ui.phase.textContent = label || ({ ready: '수비 대기', flight: '타구 추적 중', catch: '포구 기회!', throwAim: '1루 조준', throwTiming: '송구 타이밍', throwFlight: '송구 중', result: '플레이 종료' }[phase] || phase);
+    }
+    function updateStats() {
+      ui.catches.textContent = String(gameState.catches);
+      ui.misses.textContent = String(gameState.misses);
+      ui.outs.textContent = String(gameState.outs);
+      ui.score.textContent = String(gameState.score);
+    }
+    function showToast(text) {
+      ui.toast.textContent = text;
+      ui.toast.classList.add('show');
+      gameState.toastTimer = 1.45;
+    }
+
+    // ------------------------------------------------------------
+    // 6. 타구 생성: 공, 그림자, 낙하지점 표시
+    // ------------------------------------------------------------
+    function makeBallMesh() {
+      const group = new THREE.Group();
+      const ballMaterial = material(0xf8f6e9, 0.58);
+      const sphere = new THREE.Mesh(new THREE.SphereGeometry(BALL_RADIUS, 18, 14), ballMaterial);
+      sphere.castShadow = true;
+      group.add(sphere);
+      const seamMaterial = new THREE.MeshBasicMaterial({ color: 0xc74438 });
+      for (let k = 0; k < 2; k++) {
+        const curve = new THREE.EllipseCurve(0, 0, 0.135, 0.085, 0.3, Math.PI * 1.8, false, 0);
+        const points = curve.getPoints(30);
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const seam = new THREE.Line(geometry, seamMaterial);
+        seam.rotation.y = k * Math.PI / 2;
+        seam.position.z = 0.015;
+        group.add(seam);
+      }
+      return group;
+    }
+    function clearBall() {
+      if (gameState.ball) scene.remove(gameState.ball);
+      if (gameState.ballShadow) scene.remove(gameState.ballShadow);
+      if (gameState.targetMarker) scene.remove(gameState.targetMarker);
+      gameState.ball = null;
+      gameState.ballShadow = null;
+      gameState.targetMarker = null;
+    }
+
+    function startHit() {
+      if (!gameState.started) return;
+      if (!['ready', 'result'].includes(gameState.phase)) return;
+      ui.result.style.display = 'none';
+      clearBall();
+      gameState.attempts++;
+      gameState.ballAge = 0;
+      gameState.runnerProgress = 0;
+      runnerModel.position.copy(runnerStart);
+      runnerModel.visible = true;
+
+      const r = Math.random();
+      if (r < 0.60) {
+        gameState.ballType = '땅볼';
+        gameState.ballDuration = THREE.MathUtils.randFloat(2.0, 2.7);
+        gameState.ballArc = THREE.MathUtils.randFloat(0.13, 0.28);
+      } else if (r < 0.84) {
+        gameState.ballType = '강한 타구';
+        gameState.ballDuration = THREE.MathUtils.randFloat(1.35, 1.85);
+        gameState.ballArc = THREE.MathUtils.randFloat(1.5, 2.8);
+      } else {
+        gameState.ballType = '느린 타구';
+        gameState.ballDuration = THREE.MathUtils.randFloat(2.8, 3.4);
+        gameState.ballArc = THREE.MathUtils.randFloat(0.08, 0.2);
+      }
+
+      gameState.ballStart.set(THREE.MathUtils.randFloat(-1.7, 1.7), 0.45, -25.2);
+      const targetX = THREE.MathUtils.randFloat(-14.5, 3.0);
+      const targetZ = THREE.MathUtils.randFloat(-12.5, 11.5);
+      gameState.ballTarget.set(targetX, 0.22, targetZ);
+      gameState.ball = makeBallMesh();
+      gameState.ball.position.copy(gameState.ballStart);
+      scene.add(gameState.ball);
+
+      const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x172016, transparent: true, opacity: 0.23, depthWrite: false });
+      gameState.ballShadow = new THREE.Mesh(new THREE.CircleGeometry(0.5, 18), shadowMaterial);
+      gameState.ballShadow.rotation.x = -Math.PI / 2;
+      gameState.ballShadow.position.set(gameState.ballStart.x, 0.012, gameState.ballStart.z);
+      scene.add(gameState.ballShadow);
+
+      const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xc6ef79, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+      gameState.targetMarker = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.72, 28), markerMaterial);
+      gameState.targetMarker.rotation.x = -Math.PI / 2;
+      gameState.targetMarker.position.set(targetX, 0.035, targetZ);
+      scene.add(gameState.targetMarker);
+
+      setPhase('flight', `${gameState.ballType} 추적 중`);
+      setMessage('타구 발생!', '공의 낙하지점으로 이동한 뒤 가까워지면 클릭해 포구하세요.');
+      ui.meter.style.width = '0%';
+      ui.distance.textContent = '공과 거리 계산 중';
+    }
+
+    // ------------------------------------------------------------
+    // 7. 포구 및 다이빙 판정
+    // ------------------------------------------------------------
+    function catchMetrics() {
+      if (!gameState.ball) return { distance: Infinity, vertical: Infinity, allowed: false };
+      const ball = gameState.ball.position;
+      const distance = Math.hypot(ball.x - player.position.x, ball.z - player.position.z);
+      const gloveHeight = player.isDiving ? 0.55 : 0.82;
+      const vertical = Math.abs(ball.y - gloveHeight);
+      const radius = player.isDiving ? DIVE_CATCH_RADIUS : NORMAL_CATCH_RADIUS;
+      const heightLimit = player.isDiving ? 1.75 : 1.05;
+      return { distance, vertical, allowed: distance <= radius && vertical <= heightLimit, radius };
+    }
+
+    function completeCatch(quality) {
+      if (!['flight', 'catch'].includes(gameState.phase)) return;
+      const wasDiving = player.isDiving;
+      player.isDiving = false;
+      player.diveElapsed = 0;
+      gameState.catches++;
+      const points = quality === 'PERFECT' ? 110 : (wasDiving ? 100 : 80);
+      gameState.score += points;
+      updateStats();
+      clearBall();
+      setPhase('throwAim', '1루 조준');
+      setMessage('CATCH! 1루로 송구하라', '마우스로 1루를 바라보고 Enter를 눌러 송구 게이지를 시작하세요.');
+      showToast(`${quality === 'PERFECT' ? '완벽한 포구!' : '포구 성공!'} · 이제 1루 송구`);
+      ui.reticle.style.opacity = '0';
+      ui.meter.style.width = '0%';
+      ui.distance.textContent = '1루를 바라보고 Enter';
+    }
+
+    function finishMiss() {
+      if (!['flight', 'catch'].includes(gameState.phase)) return;
+      player.isDiving = false;
+      player.diveElapsed = 0;
+      gameState.misses++;
+      gameState.score = Math.max(0, gameState.score - 50);
+      runnerModel.visible = false;
+      updateStats();
+      setPhase('result', '포구 실패');
+      setMessage('MISSED BALL', '공을 놓쳤어. 다음 타구에서 위치와 타이밍을 조절해 봐.');
+      showToast('아쉽다! 다음 타구에 도전해 보자.');
+      ui.resultTitle.textContent = 'MISSED BALL';
+      ui.resultText.textContent = `이번 타구를 놓쳤어. 공과의 거리를 좁히고 공이 가까워졌을 때 클릭해 봐. 현재 점수 ${gameState.score}점.`;
+      ui.result.style.display = 'grid';
+      ui.reticle.style.opacity = '0';
+      clearBall();
+      document.exitPointerLock?.();
+      updateStats();
+    }
+
+    function beginThrowTiming() {
+      if (gameState.phase !== 'throwAim') return;
+      forward.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+      tempVector.copy(FIRST).sub(player.position).setY(0).normalize();
+      gameState.throwAimDot = THREE.MathUtils.clamp(forward.dot(tempVector), -1, 1);
+      gameState.throwClock = 0;
+      gameState.throwMeterValue = 0.5;
+      setPhase('throwTiming', '송구 타이밍');
+      setMessage('송구 타이밍을 잡아라', '게이지가 초록색 중앙에 올 때 Enter를 다시 눌러 공을 놓으세요.');
+      ui.distance.textContent = `1루 조준 정확도: ${Math.round(Math.max(0, gameState.throwAimDot) * 100)}%`;
+      showToast('송구 게이지 시작!');
+    }
+
+    function finishThrow(isOut, accurate, timingLabel) {
+      if (gameState.phase !== 'throwFlight') return;
+      if (isOut) {
+        gameState.outs++;
+        gameState.score += 180;
+        setMessage('OUT!', '정확한 송구로 타자 주자를 잡았어!');
+        ui.resultTitle.textContent = 'OUT!';
+        ui.resultText.textContent = `송구 성공! ${timingLabel} 타이밍과 정확한 조준으로 아웃을 만들었어. 현재 점수 ${gameState.score}점.`;
+        showToast('멋진 송구! 아웃!');
+      } else {
+        gameState.score += accurate ? 20 : 0;
+        setMessage('SAFE', accurate ? '송구는 정확했지만 주자가 먼저 도착했어.' : '송구가 빗나가 주자가 세이프야.');
+        ui.resultTitle.textContent = 'SAFE';
+        ui.resultText.textContent = accurate
+          ? `송구는 정확했지만 주자가 먼저 1루에 도착했어. 현재 점수 ${gameState.score}점.`
+          : `송구 방향 또는 타이밍이 빗나갔어. 1루를 정확히 조준하고 게이지 중앙에서 Enter를 눌러 봐. 현재 점수 ${gameState.score}점.`;
+        showToast(accurate ? '아슬아슬하게 세이프!' : '송구 실책!');
+      }
+      runnerModel.visible = false;
+      clearBall();
+      setPhase('result', isOut ? '아웃' : '세이프');
+      ui.result.style.display = 'grid';
+      ui.reticle.style.opacity = '0';
+      document.exitPointerLock?.();
+      updateStats();
+    }
+
+    function releaseThrow() {
+      if (gameState.phase !== 'throwTiming') return;
+      const timingError = Math.abs(gameState.throwMeterValue - 0.53);
+      const aimScore = THREE.MathUtils.clamp((gameState.throwAimDot - 0.25) / 0.72, 0, 1);
+      const timingScore = THREE.MathUtils.clamp(1 - timingError * 2.25, 0, 1);
+      const accuracy = aimScore * 0.62 + timingScore * 0.38;
+      const isPerfect = gameState.throwAimDot > 0.93 && timingError < 0.09;
+      const timingLabel = isPerfect ? 'PERFECT' : (timingError < 0.2 ? 'GOOD' : 'EARLY / LATE');
+      const perpendicular = new THREE.Vector3(tempVector.z, 0, -tempVector.x);
+      const spread = (1 - accuracy) * 7.0;
+      gameState.throwSpread = spread;
+      gameState.throwTarget.copy(FIRST).addScaledVector(perpendicular, spread);
+      gameState.throwTarget.y = 1.05;
+      forward.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+      gameState.throwStart.set(player.position.x, camera.position.y - 0.25, player.position.z).addScaledVector(forward, 0.72);
+      gameState.throwDuration = 0.72 + (1 - accuracy) * 0.42;
+      gameState.throwAge = 0;
+      gameState.throwTimingLabel = timingLabel;
+      gameState.throwAccuracy = accuracy;
+      gameState.throwWasAccurate = spread < 1.75;
+      clearBall();
+      gameState.ball = makeBallMesh();
+      gameState.ball.position.copy(gameState.throwStart);
+      scene.add(gameState.ball);
+      setPhase('throwFlight', '1루 송구 중');
+      setMessage('THROW!', '공이 1루로 날아가고 있어!');
+      ui.distance.textContent = `송구 정확도: ${Math.round(accuracy * 100)}%`;
+      ui.meter.style.width = `${Math.round(accuracy * 100)}%`;
+    }
+
+    function dive() {
+      if (!gameState.ball || !['flight', 'catch'].includes(gameState.phase)) return;
+      if (player.isDiving || player.diveCooldown > 0) return;
+      player.isDiving = true;
+      player.diveElapsed = 0;
+      player.diveCooldown = 2.0;
+      forward.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+      const inputForward = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
+      const inputSide = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+      right.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+      player.diveDirection.copy(forward).multiplyScalar(inputForward).addScaledVector(right, inputSide);
+      if (player.diveDirection.lengthSq() < 0.01) player.diveDirection.copy(forward);
+      player.diveDirection.normalize();
+      setMessage('DIVE!', '몸을 던지는 중이야. 공에 가까워지면 클릭!');
+      showToast('다이빙!');
+    }
+
+    // ------------------------------------------------------------
+    // 8. 키보드·마우스 조작
+    // ------------------------------------------------------------
+    function requestLock() {
+      renderer.domElement.requestPointerLock?.();
+    }
+    $('#startBtn').addEventListener('click', () => {
+      gameState.started = true;
+      ui.overlay.style.display = 'none';
+      setPhase('ready', '수비 대기');
+      setMessage('수비 위치를 잡아라', 'F 키로 타구를 발생시키고 공을 향해 이동하세요.');
+      requestLock();
+    });
+    $('#howBtn').addEventListener('click', () => {
+      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nEnter: 1루 송구 게이지 시작 / Enter: 릴리스\nESC: 마우스 잠금 해제\n\n포구 후 마우스로 1루를 조준하고 Enter를 눌러 송구하세요.');
+    });
+    $('#nextBtn').addEventListener('click', startHit);
+
+    document.addEventListener('pointerlockchange', () => {
+      gameState.pointerLocked = document.pointerLockElement === renderer.domElement;
+      if (gameState.started && !gameState.pointerLocked && gameState.phase !== 'result') {
+        showToast('화면을 클릭하면 시점 조작을 다시 시작해요.');
+      }
+    });
+    document.addEventListener('mousemove', (event) => {
+      if (!gameState.pointerLocked) return;
+      player.yaw -= event.movementX * 0.0024;
+      player.pitch -= event.movementY * 0.0024;
+      player.pitch = THREE.MathUtils.clamp(player.pitch, -PITCH_LIMIT, PITCH_LIMIT);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (['Space', 'ArrowUp', 'ArrowDown'].includes(event.code)) event.preventDefault();
+      keys.add(event.code);
+      if (event.code === 'KeyF' && !event.repeat) startHit();
+      if (event.code === 'Space' && !event.repeat) dive();
+      if (event.code === 'Enter' && !event.repeat) {
+        if (gameState.phase === 'throwAim') beginThrowTiming();
+        else if (gameState.phase === 'throwTiming') releaseThrow();
+      }
+    });
+    document.addEventListener('keyup', (event) => keys.delete(event.code));
+    window.addEventListener('blur', () => keys.clear());
+    document.addEventListener('contextmenu', (event) => event.preventDefault());
+    renderer.domElement.addEventListener('click', () => {
+      if (!gameState.started) return;
+      if (!gameState.pointerLocked) {
+        requestLock();
+        return;
+      }
+      attemptCatch();
+    });
+
+    // ------------------------------------------------------------
+    // 9. 매 프레임 이동, 공 궤적, 애니메이션
+    // ------------------------------------------------------------
+    function updatePlayer(dt, elapsed) {
+      const allowMovement = !['throwAim', 'throwTiming', 'throwFlight', 'result'].includes(gameState.phase);
+      const inputForward = allowMovement ? (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0) : 0;
+      const inputSide = allowMovement ? (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0) : 0;
+      forward.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+      right.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+      moveVector.copy(forward).multiplyScalar(inputForward).addScaledVector(right, inputSide);
+      const hasMovement = moveVector.lengthSq() > 0.001;
+      if (hasMovement) moveVector.normalize();
+      const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
+      const speed = sprint ? 9.6 : 5.7;
+
+      if (player.isDiving) {
+        player.diveElapsed += dt;
+        player.position.addScaledVector(player.diveDirection, 9.3 * dt);
+        if (player.diveElapsed >= player.diveDuration) {
+          player.isDiving = false;
+          player.diveElapsed = 0;
+        }
+      } else if (hasMovement) {
+        player.position.addScaledVector(moveVector, speed * dt);
+      }
+      player.position.x = THREE.MathUtils.clamp(player.position.x, -24, 24);
+      player.position.z = THREE.MathUtils.clamp(player.position.z, -38, 22);
+      player.diveCooldown = Math.max(0, player.diveCooldown - dt);
+
+      let cameraHeight = 1.68;
+      if (player.isDiving) {
+        const p = THREE.MathUtils.clamp(player.diveElapsed / player.diveDuration, 0, 1);
+        cameraHeight = 1.68 - Math.sin(p * Math.PI) * 1.17;
+      }
+      const bobAmount = hasMovement && !player.isDiving ? Math.sin(elapsed * (sprint ? 15 : 11)) * 0.035 : 0;
+      camera.position.set(player.position.x, cameraHeight + bobAmount, player.position.z);
+      camera.rotation.order = 'YXZ';
+      camera.rotation.y = player.yaw;
+      camera.rotation.x = player.pitch + (player.isDiving ? -0.12 : 0);
+
+      cameraRig.position.y = bobAmount + (player.isDiving ? -0.18 : 0);
+      cameraRig.rotation.z = player.isDiving ? -0.48 : (hasMovement ? Math.sin(elapsed * 10) * 0.035 : 0);
+      cameraRig.rotation.x = player.isDiving ? -0.24 : 0;
+      glove.rotation.x = player.isDiving ? -0.28 : THREE.MathUtils.damp(glove.rotation.x, 0, 8, dt);
+      glove.position.z = player.isDiving ? -0.82 : THREE.MathUtils.damp(glove.position.z, -1.02, 7, dt);
+    }
+
+    function updateRunner(dt) {
+      const activePhases = ['flight', 'catch', 'throwAim', 'throwTiming', 'throwFlight'];
+      if (!runnerModel.visible || !activePhases.includes(gameState.phase)) return;
+      gameState.runnerProgress = Math.min(1, gameState.runnerProgress + dt / gameState.runnerDuration);
+      const p = gameState.runnerProgress;
+      runnerModel.position.lerpVectors(runnerStart, runnerTarget, p);
+      runnerModel.position.y = 0;
+    }
+
+    function updateBall(dt) {
+      if (!gameState.ball) return;
+
+      if (gameState.phase === 'throwTiming') {
+        gameState.throwClock += dt;
+        gameState.throwMeterValue = (Math.sin(gameState.throwClock * 3.35 - Math.PI / 2) + 1) / 2;
+        ui.meter.style.width = `${Math.round(gameState.throwMeterValue * 100)}%`;
+        forward.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+        tempVector.copy(FIRST).sub(player.position).setY(0).normalize();
+        const alignment = THREE.MathUtils.clamp(forward.dot(tempVector), -1, 1);
+        gameState.throwAimDot = alignment;
+        ui.distance.textContent = `1루 조준: ${Math.round(Math.max(0, alignment) * 100)}% · Enter로 릴리스`;
+        return;
+      }
+
+      if (gameState.phase === 'throwFlight') {
+        gameState.throwAge += dt;
+        const t = THREE.MathUtils.clamp(gameState.throwAge / gameState.throwDuration, 0, 1);
+        gameState.ball.position.lerpVectors(gameState.throwStart, gameState.throwTarget, t);
+        gameState.ball.position.y += Math.sin(Math.PI * t) * 2.0;
+        gameState.ball.rotation.x += dt * 8;
+        gameState.ball.rotation.z += dt * 6;
+        if (t >= 1) {
+          const timeRemaining = Math.max(0, (1 - gameState.runnerProgress) * gameState.runnerDuration);
+          const arrivedInTime = gameState.throwDuration < timeRemaining;
+          const out = gameState.throwWasAccurate && arrivedInTime;
+          finishThrow(out, gameState.throwWasAccurate, gameState.throwTimingLabel);
+        }
+        return;
+      }
+
+      if (!['flight', 'catch'].includes(gameState.phase)) return;
+      gameState.ballAge += dt;
+      const t = THREE.MathUtils.clamp(gameState.ballAge / gameState.ballDuration, 0, 1);
+      const smooth = t * t * (3 - 2 * t);
+      const x = THREE.MathUtils.lerp(gameState.ballStart.x, gameState.ballTarget.x, smooth);
+      const z = THREE.MathUtils.lerp(gameState.ballStart.z, gameState.ballTarget.z, smooth);
+      let y;
+      if (gameState.ballType === '강한 타구') {
+        y = 0.22 + Math.sin(Math.PI * t) * gameState.ballArc;
+      } else if (gameState.ballType === '느린 타구') {
+        y = 0.22 + Math.abs(Math.sin(t * Math.PI * 4.5)) * gameState.ballArc * (1 - t) * 0.55;
+      } else {
+        y = 0.22 + Math.abs(Math.sin(t * Math.PI * 5.3)) * gameState.ballArc * (1 - t * 0.55);
+      }
+      gameState.ball.position.set(x, y, z);
+      gameState.ball.rotation.x += dt * 5.5;
+      gameState.ball.rotation.z += dt * 4.2;
+      if (gameState.ballShadow) {
+        gameState.ballShadow.position.set(x, 0.012, z);
+        const shadowScale = 1 + y * 0.24;
+        gameState.ballShadow.scale.set(shadowScale, shadowScale, 1);
+        gameState.ballShadow.material.opacity = THREE.MathUtils.clamp(0.28 - y * 0.045, 0.08, 0.28);
+      }
+      if (gameState.targetMarker) {
+        gameState.targetMarker.material.opacity = 0.32 + Math.sin(gameState.ballAge * 5) * 0.12;
+        gameState.targetMarker.scale.setScalar(1 + Math.sin(gameState.ballAge * 4) * 0.07);
+      }
+
+      const metrics = catchMetrics();
+      const catchRadius = player.isDiving ? DIVE_CATCH_RADIUS : NORMAL_CATCH_RADIUS;
+      const inReach = metrics.distance < catchRadius * 1.8 && metrics.vertical < (player.isDiving ? 2.2 : 1.45);
+      setPhase(inReach ? 'catch' : 'flight', inReach ? '포구 기회! 클릭!' : `${gameState.ballType} 추적 중`);
+      ui.distance.textContent = `공과 거리: ${metrics.distance.toFixed(1)}m`;
+      const timing = THREE.MathUtils.clamp(1 - metrics.distance / (catchRadius * 2.6), 0, 1);
+      ui.meter.style.width = `${timing * 100}%`;
+      ui.reticle.style.opacity = inReach ? '1' : '0';
+      ui.reticle.style.borderColor = metrics.allowed ? '#c6ef79' : '#f2ca75';
+      if (gameState.ballAge >= gameState.ballDuration) finishMiss();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.045);
+      const elapsed = clock.elapsedTime;
+      if (gameState.started) {
+        updatePlayer(dt, elapsed);
+        updateRunner(dt);
+        updateBall(dt);
+        if (gameState.toastTimer > 0) {
+          gameState.toastTimer -= dt;
+          if (gameState.toastTimer <= 0) ui.toast.classList.remove('show');
+        }
+      }
+      renderer.render(scene, camera);
+    }
+
+    // ------------------------------------------------------------
+    // 10. 화면 크기 변경 및 시작 상태
+    // ------------------------------------------------------------
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.7));
+    });
+    camera.position.set(player.position.x, 1.68, player.position.z);
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = player.yaw;
+    updateStats();
+    animate();
+  </script>
+</body>
+</html>
