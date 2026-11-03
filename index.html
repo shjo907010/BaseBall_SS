@@ -722,14 +722,10 @@
       const vertical = Math.abs(ball.y - gloveWorldPosition.y);
       const spatialDistance = ball.distanceTo(gloveWorldPosition);
 
-      // 플레이어가 공 쪽을 바라보는 정도도 확인한다.
-      const viewForward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-      const toBall = new THREE.Vector3(ball.x - player.position.x, 0, ball.z - player.position.z);
-      const alignment = toBall.lengthSq() > 0.001 ? viewForward.dot(toBall.normalize()) : 1;
-
+      // 카메라가 공을 바라보는지는 포구 조건으로 사용하지 않는다.
+      // 선수와 글러브의 실제 위치, 높이, 공간 거리만으로 판정한다.
       let maxDistance;
       let heightLimit;
-      let requiredAlignment;
       let maxSpatialDistance;
       if (isFlyBall) {
         // 뜬공은 올라가는 중·정점·내려오는 중 모두 포구할 수 있다.
@@ -737,17 +733,14 @@
         maxDistance = player.isJumping ? 2.35 : 1.65;
         heightLimit = player.isJumping ? 1.22 : 0.88;
         maxSpatialDistance = player.isJumping ? 2.45 : 1.75;
-        requiredAlignment = -0.12;
       } else if (player.isDiving) {
         maxDistance = 2.65;
         heightLimit = 1.25;
         maxSpatialDistance = 2.85;
-        requiredAlignment = 0.10;
       } else {
         maxDistance = 1.75;
         heightLimit = player.isJumping ? 1.20 : 0.92;
         maxSpatialDistance = player.isJumping ? 2.05 : 1.75;
-        requiredAlignment = 0.10;
       }
 
       // 글러브보다 충분히 높은 공은 점프해야 잡을 수 있다.
@@ -756,12 +749,11 @@
       const allowed = distance <= maxDistance
         && vertical <= heightLimit
         && spatialDistance <= maxSpatialDistance
-        && alignment >= requiredAlignment
         && (!needsJump || player.isJumping);
 
       return {
-        distance, vertical, spatialDistance, alignment, allowed, maxDistance,
-        heightLimit, requiredAlignment, isFlyBall, needsJump,
+        distance, vertical, spatialDistance, allowed, maxDistance,
+        heightLimit, isFlyBall, needsJump,
         ballProgress, isDescending, gloveHeight: gloveWorldPosition.y
       };
     }
@@ -771,11 +763,9 @@
         if (metrics.distance > metrics.maxDistance) return `공의 현재 위치로 이동해! 공까지 ${metrics.distance.toFixed(1)}m`;
         if (metrics.needsJump && !player.isJumping) return '공이 글러브보다 높아! 공 쪽에서 R로 점프하고 클릭해!';
         if (metrics.vertical > metrics.heightLimit) return '점프 높이를 공에 맞춰! 공이 글러브 높이에 왔을 때 클릭해!';
-        if (metrics.alignment < metrics.requiredAlignment) return '공 쪽으로 몸을 돌려!';
         if (metrics.spatialDistance > (player.isJumping ? 2.45 : 1.75)) return '글러브를 공에 더 가까이 가져가!';
         return '공이 공중에 있어! 지금 클릭해서 포구해 봐!';
       }
-      if (metrics.alignment < metrics.requiredAlignment) return '공 쪽을 바라봐야 포구할 수 있어';
       if (metrics.distance > metrics.maxDistance) return `너무 멀어! ${metrics.maxDistance.toFixed(1)}m 안으로 접근해`;
       if (metrics.vertical > metrics.heightLimit) return '글러브 높이를 공에 맞춰';
       return '지금 클릭하면 포구 가능!';
@@ -786,7 +776,7 @@
       const metrics = catchMetrics();
       if (metrics.allowed) {
         const perfect = metrics.distance < (player.isDiving ? 1.9 : (metrics.isFlyBall ? 2.0 : 0.85))
-          && metrics.vertical < (metrics.isFlyBall ? 0.95 : 0.45) && metrics.alignment > (metrics.isFlyBall ? 0.25 : 0.72);
+          && metrics.vertical < (metrics.isFlyBall ? 0.95 : 0.45);
         completeCatch(perfect ? 'PERFECT' : 'GOOD');
       } else {
         showToast(catchHint(metrics));
@@ -1190,7 +1180,7 @@
       const catchRadius = player.isDiving ? DIVE_CATCH_RADIUS : (metrics.isFlyBall ? (player.isJumping ? 2.35 : 1.65) : NORMAL_CATCH_RADIUS);
       const inReach = metrics.distance < catchRadius * 1.25 && metrics.vertical < metrics.heightLimit * 1.45;
       setPhase(inReach ? 'catch' : 'flight', inReach ? (metrics.allowed ? '포구 가능! 지금 클릭' : catchHint(metrics)) : `${gameState.ballType} 추적 중`);
-      ui.distance.textContent = metrics.isFlyBall ? `공까지 ${metrics.distance.toFixed(1)}m / 허용 ${metrics.maxDistance.toFixed(1)}m · ${metrics.isDescending ? '하강 중' : '상승 중'}` : `거리 ${metrics.distance.toFixed(1)}m / 허용 ${metrics.maxDistance.toFixed(2)}m · 방향 ${Math.round(Math.max(0, metrics.alignment) * 100)}%`;
+      ui.distance.textContent = metrics.isFlyBall ? `공까지 ${metrics.distance.toFixed(1)}m / 허용 ${metrics.maxDistance.toFixed(1)}m · ${metrics.isDescending ? '하강 중' : '상승 중'}` : `거리 ${metrics.distance.toFixed(1)}m / 허용 ${metrics.maxDistance.toFixed(2)}m`;
       const timing = THREE.MathUtils.clamp(1 - metrics.distance / (catchRadius * 1.8), 0, 1);
       ui.meter.style.width = `${timing * 100}%`;
       ui.reticle.style.opacity = inReach ? '1' : '0';
