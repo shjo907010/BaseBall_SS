@@ -81,7 +81,7 @@
 <body>
   <div id="game" aria-label="SHORTSTOP 3D 야구장"></div>
   <div id="hud">
-    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING · V1.3</small></div>
+    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING · V1.4</small></div>
     <div id="stats">
       <div class="panel stat">수비 회차<b id="playsCount">0 / 10</b></div>
       <div class="panel stat">포구 성공<b id="catchCount">0</b></div>
@@ -95,7 +95,7 @@
       <b>이동</b> <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
       <br><b>질주</b> <span class="key">SHIFT</span>　<b>다이빙</b> <span class="key">SPACE</span>
       <br><b>포구</b> <span class="key">CLICK</span>　<b>점프 포구</b> <span class="key">R</span>　<b>타구</b> <span class="key">F</span>
-      <br><b>1루 송구</b> <span class="key">ENTER</span>　<b>송구 릴리스</b> <span class="key">ENTER</span>
+      <br><b>1루 송구</b> <span class="key">CLICK</span> 1회 게이지 시작 · 다시 클릭 릴리스 <span class="key">ENTER</span>도 가능
       <br><b>시점</b> 마우스 이동　<b>잠금 해제</b> ESC
     </div>
     <div id="status" class="panel">
@@ -292,11 +292,24 @@
       [SECOND.x, 0.03, SECOND.z, THIRD.x, 0.03, THIRD.z],
       [THIRD.x, 0.03, THIRD.z, HOME.x, 0.03, HOME.z]
     ];
-    for (const p of lineSegments) addCylinderBetween(scene, [p[0], p[1], p[2]], [p[3], p[4], p[5]], 0.055, chalkMat);
+    // 경기장 라인은 둥근 막대가 아니라 지면에 붙은 평평한 초크 라인으로 표현
+    function addGroundLine(x1, z1, x2, z2, width = 0.095) {
+      const dx = x2 - x1, dz = z2 - z1;
+      const length = Math.hypot(dx, dz);
+      const line = new THREE.Mesh(new THREE.PlaneGeometry(width, length), chalkMat);
+      line.rotation.x = -Math.PI / 2;
+      line.rotation.z = -Math.atan2(dx, dz);
+      line.position.set((x1 + x2) / 2, 0.038, (z1 + z2) / 2);
+      line.receiveShadow = true;
+      scene.add(line);
+    }
+    for (const p of lineSegments) addGroundLine(p[0], p[2], p[3], p[5]);
 
     // 투수 마운드와 고무판
-    const mound = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 3.6, 0.36, 28), dirtDarkMat);
-    mound.position.set(0, 0.12, -7);
+    // 투수 마운드: 기둥처럼 보이는 원기둥 대신 낮고 넓은 흙 둔덕
+    const mound = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 12), dirtDarkMat);
+    mound.scale.set(3.45, 0.16, 3.2);
+    mound.position.set(0, 0.015, -7);
     mound.castShadow = true; mound.receiveShadow = true; scene.add(mound);
     addBox(scene, 1.2, 0.12, 0.32, baseMat, 0, 0.36, -7, true);
 
@@ -360,11 +373,23 @@
     const batPivot = new THREE.Group();
     batPivot.position.set(0.34, 1.48, 0.12);
     batterModel.add(batPivot);
-    const bat = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.09, 1.5, 7), material(0x986b40));
+    // 타자 배트: 손잡이는 가늘고 타격부는 굵어지는 실제 배트 실루엣
+    const batProfile = [
+      new THREE.Vector2(0.034, 0.00), new THREE.Vector2(0.038, 0.08),
+      new THREE.Vector2(0.043, 0.30), new THREE.Vector2(0.052, 0.62),
+      new THREE.Vector2(0.075, 0.95), new THREE.Vector2(0.092, 1.28),
+      new THREE.Vector2(0.085, 1.43), new THREE.Vector2(0.064, 1.50)
+    ];
+    const bat = new THREE.Mesh(new THREE.LatheGeometry(batProfile, 9), material(0x986b40));
     bat.position.set(0.34, 0.35, 0.02);
     bat.rotation.z = -0.8;
     bat.castShadow = true;
     batPivot.add(bat);
+    const batGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.22, 8), material(0x3a3028));
+    batGrip.position.set(0.34, 0.45, 0.02);
+    batGrip.rotation.z = -0.8;
+    batGrip.castShadow = true;
+    batPivot.add(batGrip);
     let batterSwingTimer = -1;
 
     // ------------------------------------------------------------
@@ -726,11 +751,11 @@
       updateStats();
       clearBall();
       setPhase('throwAim', '1루 조준');
-      setMessage('CATCH! 1루로 송구하라', '마우스로 1루를 바라보고 Enter를 눌러 송구 게이지를 시작하세요.');
+      setMessage('CATCH! 1루로 송구하라', '마우스로 1루를 바라본 뒤 클릭해 게이지를 시작하고, 다시 클릭해 송구하세요. Enter도 사용할 수 있어요.');
       showToast(`${quality === 'PERFECT' ? '완벽한 포구!' : '포구 성공!'} · 이제 1루 송구`);
       ui.reticle.style.opacity = '0';
       ui.meter.style.width = '0%';
-      ui.distance.textContent = '1루를 바라보고 Enter';
+      ui.distance.textContent = '1루 조준 후 클릭 → 다시 클릭해 송구';
     }
 
     function presentPlayResult(title, detail) {
@@ -804,9 +829,9 @@
       gameState.throwClock = 0;
       gameState.throwMeterValue = 0.5;
       setPhase('throwTiming', '송구 타이밍');
-      setMessage('송구 타이밍을 잡아라', '게이지가 초록색 중앙에 올 때 Enter를 다시 눌러 공을 놓으세요.');
+      setMessage('송구 타이밍을 잡아라', '게이지가 초록색 중앙에 올 때 다시 클릭하면 공을 놓습니다. Enter도 가능해요.');
       ui.distance.textContent = `1루 조준 정확도: ${Math.round(Math.max(0, gameState.throwAimDot) * 100)}%`;
-      showToast('송구 게이지 시작!');
+      showToast('송구 게이지 시작! 다시 클릭해 송구!');
     }
 
     function finishThrow(isOut, accurate, timingLabel) {
@@ -825,7 +850,7 @@
         resultTitle = 'SAFE';
         resultDetail = accurate
           ? '송구는 정확했지만 주자가 먼저 1루에 도착했어.'
-          : '송구 방향 또는 타이밍이 빗나갔어. 1루를 정확히 조준하고 게이지 중앙에서 Enter를 눌러 봐.';
+          : '송구 방향 또는 타이밍이 빗나갔어. 1루를 정확히 조준하고 게이지 중앙에서 다시 클릭해 봐.';
         setMessage('SAFE', accurate ? '송구는 정확했지만 주자가 먼저 도착했어.' : '송구가 빗나가 주자가 세이프야.');
         showToast(accurate ? '아슬아슬하게 세이프!' : '송구 실책!');
       }
@@ -908,7 +933,7 @@
       requestLock();
     });
     $('#howBtn').addEventListener('click', () => {
-      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nR: 점프 포구(뜬공)\nEnter: 1루 송구 게이지 시작 / Enter: 릴리스\nESC: 마우스 잠금 해제\n\n포구 조건: 일반 포구는 공까지 수평거리 1.42m 이내, 다이빙은 2.65m 이내여야 해요. 공 높이 차이와 공을 바라보는 방향(정면 기준 약 65도 안쪽)도 맞아야 합니다. 클릭 한 번 실패했다고 바로 놓치는 건 아니고, 공이 도착할 때까지 포구에 성공하지 못하면 MISSED BALL입니다. 포구 후 마우스로 1루를 조준하고 Enter를 눌러 송구하세요. 10회 수비 라운드이며 각 플레이 뒤 다음 타구는 자동 시작됩니다.');
+      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nR: 점프 포구(뜬공)\n송구: 포구 후 1루를 바라보고 클릭 → 게이지가 초록색일 때 다시 클릭\nEnter도 송구 게이지 시작/릴리스에 사용할 수 있어요.\nESC: 마우스 잠금 해제\n\n포구 조건: 일반 포구는 공까지 수평거리 1.42m 이내, 다이빙은 2.65m 이내여야 해요. 공 높이 차이와 공을 바라보는 방향도 맞아야 합니다.');
     });
     $('#nextBtn').addEventListener('click', continueAfterResult);
 
@@ -942,6 +967,15 @@
       if (!gameState.started) return;
       if (!gameState.pointerLocked) {
         requestLock();
+        return;
+      }
+      // 포구한 뒤에는 마우스 클릭 두 번으로 송구 게이지 시작과 릴리스를 처리한다.
+      if (gameState.phase === 'throwAim') {
+        beginThrowTiming();
+        return;
+      }
+      if (gameState.phase === 'throwTiming') {
+        releaseThrow();
         return;
       }
       attemptCatch();
@@ -1046,7 +1080,7 @@
         tempVector.copy(FIRST).sub(player.position).setY(0).normalize();
         const alignment = THREE.MathUtils.clamp(forward.dot(tempVector), -1, 1);
         gameState.throwAimDot = alignment;
-        ui.distance.textContent = `1루 조준: ${Math.round(Math.max(0, alignment) * 100)}% · Enter로 릴리스`;
+        ui.distance.textContent = `1루 조준: ${Math.round(Math.max(0, alignment) * 100)}% · 클릭으로 릴리스`;
         return;
       }
       if (!gameState.ball) return;
