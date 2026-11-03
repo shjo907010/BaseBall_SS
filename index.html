@@ -81,7 +81,7 @@
 <body>
   <div id="game" aria-label="SHORTSTOP 3D 야구장"></div>
   <div id="hud">
-    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING · V1.1</small></div>
+    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING · V1.3</small></div>
     <div id="stats">
       <div class="panel stat">수비 회차<b id="playsCount">0 / 10</b></div>
       <div class="panel stat">포구 성공<b id="catchCount">0</b></div>
@@ -110,7 +110,7 @@
     <div class="card">
       <div class="eyebrow">BASEBALL FIELDING SIMULATOR · THREE.JS</div>
       <h1>OWN THE<br><span>INFIELD.</span></h1>
-      <p class="desc">저폴리곤 3D 야구장에서 유격수 수비를 경험하세요. 타자의 타격과 함께 날아오는 공을 WASD로 쫓고, 위치와 타이밍을 맞춰 포구하세요. 높은 뜬공은 R로 점프해 잡고, 급한 타구는 SPACE로 다이빙할 수 있습니다. 10번의 수비로 실력을 증명하세요.</p>
+      <p class="desc">저폴리곤 3D 야구장에서 글러브를 든 유격수의 시점으로 수비를 경험하세요. 타자의 타격과 함께 날아오는 공을 WASD로 쫓고, 위치와 타이밍을 맞춰 포구하세요. 높은 뜬공은 R로 점프해 잡고, 급한 타구는 SPACE로 다이빙할 수 있습니다. 10번의 수비로 실력을 증명하세요.</p>
       <div class="actions">
         <button id="startBtn" class="primary" type="button">수비 연습 시작 →</button>
         <button id="howBtn" class="secondary" type="button">조작 방법</button>
@@ -368,36 +368,124 @@
     let batterSwingTimer = -1;
 
     // ------------------------------------------------------------
-    // 4. 1인칭 유격수와 글러브
+    // 4. 1인칭 유격수 글러브
+    // 단순한 상자/막대 손가락을 없애고, 손목 밴드·가죽 쉘·웹·끈이
+    // 구분되는 저폴리곤 내야수 글러브로 제작한다.
     // ------------------------------------------------------------
     const cameraRig = new THREE.Group();
     camera.add(cameraRig);
     scene.add(camera);
 
-    // 왼팔과 글러브를 화면 왼쪽 아래에 배치하고, 오른손은 보조로 표현
-    const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.15, 0.66, 8), skinMat);
-    leftArm.position.set(-0.42, -0.43, -0.78);
-    leftArm.rotation.z = 0.35;
-    cameraRig.add(leftArm);
+    const sleeveMat = material(0x263d58);
+    const sleeveTrimMat = material(0xe8e9dd);
+    const leatherBodyMat = material(0x59301f);
+    const leatherPanelMat = material(0x8a4a2a);
+    const leatherDarkMat = material(0x321c16);
+    const leatherLightMat = material(0xb87943);
+    const laceMat = material(0xd4a36a);
+
+    // 유니폼 소매와 손목: 맨살 원통이 따로 떠 보이지 않도록 천 소매로 연결
+    const forearmSleeve = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.135, 0.48, 4, 8), sleeveMat
+    );
+    forearmSleeve.position.set(-0.47, -0.64, -0.82);
+    forearmSleeve.rotation.z = 0.31;
+    forearmSleeve.castShadow = true;
+    cameraRig.add(forearmSleeve);
+
+    const sleeveCuff = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.139, 0.139, 0.075, 10), sleeveTrimMat
+    );
+    sleeveCuff.position.set(-0.50, -0.405, -0.91);
+    sleeveCuff.rotation.z = 0.31;
+    sleeveCuff.castShadow = true;
+    cameraRig.add(sleeveCuff);
 
     const glove = new THREE.Group();
-    glove.position.set(-0.47, -0.53, -1.02);
-    glove.rotation.set(0.12, -0.18, 0.28);
+    glove.position.set(-0.50, -0.55, -1.08);
+    glove.rotation.set(0.02, -0.20, 0.12);
     cameraRig.add(glove);
-    const glovePalm = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.34, 0.19), gloveMat);
-    glovePalm.castShadow = true; glove.add(glovePalm);
-    for (let i = 0; i < 4; i++) {
-      const finger = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.21, 3, 6), gloveMat);
-      finger.position.set(-0.15 + i * 0.1, 0.25, 0.015);
-      finger.rotation.z = (i - 1.5) * -0.12;
-      glove.add(finger);
+
+    // 글러브 바깥 윤곽: 손목에서 넓어지고 위쪽에 손가락 4개가 솟는 실루엣
+    const gloveShape = new THREE.Shape();
+    gloveShape.moveTo(-0.19, -0.34);
+    gloveShape.quadraticCurveTo(-0.25, -0.27, -0.24, -0.15);
+    gloveShape.lineTo(-0.29, -0.045);
+    gloveShape.quadraticCurveTo(-0.36, 0.075, -0.27, 0.16);
+    gloveShape.quadraticCurveTo(-0.19, 0.225, -0.115, 0.12);
+    gloveShape.lineTo(-0.10, 0.285);
+    gloveShape.quadraticCurveTo(-0.09, 0.385, -0.015, 0.39);
+    gloveShape.quadraticCurveTo(0.055, 0.385, 0.055, 0.29);
+    gloveShape.lineTo(0.065, 0.345);
+    gloveShape.quadraticCurveTo(0.075, 0.445, 0.155, 0.425);
+    gloveShape.quadraticCurveTo(0.225, 0.405, 0.215, 0.30);
+    gloveShape.lineTo(0.225, 0.245);
+    gloveShape.quadraticCurveTo(0.265, 0.33, 0.325, 0.285);
+    gloveShape.quadraticCurveTo(0.385, 0.235, 0.335, 0.12);
+    gloveShape.lineTo(0.265, -0.17);
+    gloveShape.quadraticCurveTo(0.245, -0.30, 0.145, -0.345);
+    gloveShape.quadraticCurveTo(-0.02, -0.395, -0.19, -0.34);
+
+    const gloveShell = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(gloveShape, {
+        depth: 0.12, bevelEnabled: true, bevelSegments: 3,
+        steps: 1, bevelSize: 0.018, bevelThickness: 0.025, curveSegments: 7
+      }),
+      leatherBodyMat
+    );
+    gloveShell.castShadow = true;
+    glove.add(gloveShell);
+
+    // 중앙 등판과 손바닥 패널
+    const palmPad = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 14, 10), leatherPanelMat
+    );
+    palmPad.scale.set(0.205, 0.205, 0.035);
+    palmPad.position.set(0.005, -0.035, 0.145);
+    palmPad.castShadow = true;
+    glove.add(palmPad);
+
+    // 손목 입구와 밴드
+    const wristBand = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.15, 0.19), leatherDarkMat
+    );
+    wristBand.position.set(-0.025, -0.315, 0.055);
+    wristBand.rotation.z = -0.04;
+    wristBand.castShadow = true;
+    glove.add(wristBand);
+    const wristStripe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.30, 0.025, 0.198), leatherLightMat
+    );
+    wristStripe.position.set(-0.025, -0.275, 0.06);
+    glove.add(wristStripe);
+
+    // 끈과 봉제선을 튜브로 표현하는 보조 함수
+    function addGloveLine(points, radius, mat, parent = glove) {
+      const curve = new THREE.CatmullRomCurve3(points.map(([x, y, z = 0.17]) => new THREE.Vector3(x, y, z)));
+      const line = new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(8, points.length * 5), radius, 5, false), mat);
+      line.castShadow = true;
+      parent.add(line);
+      return line;
     }
-    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.23, 3, 6), gloveMat);
-    thumb.position.set(-0.28, 0.01, 0.02); thumb.rotation.z = -0.85; glove.add(thumb);
-    const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.13, 0.55, 8), skinMat);
-    rightArm.position.set(0.48, -0.59, -0.92); rightArm.rotation.z = -0.38; cameraRig.add(rightArm);
-    const rightHand = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 7), skinMat);
-    rightHand.position.set(0.57, -0.86, -1.02); cameraRig.add(rightHand);
+
+    // 엄지와 검지 사이의 웹: 야구 글러브임을 알아볼 수 있는 핵심 부분
+    addGloveLine([[-0.235, 0.12, 0.19], [-0.17, 0.20, 0.205], [-0.10, 0.255, 0.205], [-0.035, 0.245, 0.205]], 0.025, leatherDarkMat);
+    addGloveLine([[-0.22, 0.105, 0.205], [-0.15, 0.145, 0.215], [-0.08, 0.17, 0.215], [-0.025, 0.18, 0.205]], 0.014, leatherLightMat);
+    addGloveLine([[-0.19, 0.22, 0.215], [-0.15, 0.17, 0.22], [-0.11, 0.12, 0.215], [-0.07, 0.08, 0.20]], 0.009, laceMat);
+    addGloveLine([[-0.07, 0.25, 0.22], [-0.12, 0.20, 0.22], [-0.17, 0.15, 0.21], [-0.21, 0.12, 0.20]], 0.009, laceMat);
+
+    // 손가락별 봉제선과 가죽 홈
+    addGloveLine([[-0.075, 0.30, 0.17], [-0.055, 0.20, 0.18], [-0.045, 0.12, 0.18]], 0.008, laceMat);
+    addGloveLine([[0.075, 0.32, 0.17], [0.09, 0.22, 0.18], [0.09, 0.14, 0.18]], 0.008, laceMat);
+    addGloveLine([[0.235, 0.23, 0.17], [0.205, 0.14, 0.18], [0.18, 0.07, 0.18]], 0.008, laceMat);
+    addGloveLine([[-0.23, -0.06, 0.18], [-0.17, -0.19, 0.18], [-0.08, -0.245, 0.18], [0.07, -0.25, 0.18], [0.19, -0.19, 0.18]], 0.009, laceMat);
+
+    // 작은 가죽 구멍과 끈 매듭으로 디테일 추가
+    for (let i = 0; i < 5; i++) {
+      const eyelet = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 5), leatherDarkMat);
+      eyelet.position.set(-0.17 + i * 0.075, -0.295, 0.155);
+      glove.add(eyelet);
+    }
 
     // ------------------------------------------------------------
     // 5. 게임 상태와 UI 참조
@@ -453,7 +541,8 @@
       score: 0,
       attempts: 0,
       roundSize: 10,
-      toastTimer: 0
+      toastTimer: 0,
+      nextPlayTimer: null
     };
     const keys = new Set();
     const clock = new THREE.Clock();
@@ -522,6 +611,10 @@
     function startHit() {
       if (!gameState.started) return;
       if (!['ready', 'result'].includes(gameState.phase)) return;
+      if (gameState.nextPlayTimer) {
+        clearTimeout(gameState.nextPlayTimer);
+        gameState.nextPlayTimer = null;
+      }
       if (gameState.attempts >= ROUND_SIZE) return;
       ui.result.style.display = 'none';
       clearBall();
@@ -596,8 +689,16 @@
       const alignment = toBall.lengthSq() > 0.001 ? viewForward.dot(toBall.normalize()) : 1;
       // 거리·높이뿐 아니라 바라보는 방향과 클릭 타이밍도 만족해야 포구 가능
       const timingRadius = player.isDiving ? 2.65 : 1.42;
-      const allowed = distance <= radius && distance <= timingRadius && vertical <= heightLimit && alignment >= 0.42;
-      return { distance, vertical, alignment, allowed, radius, heightLimit };
+      const maxDistance = Math.min(radius, timingRadius);
+      const allowed = distance <= maxDistance && vertical <= heightLimit && alignment >= 0.42;
+      return { distance, vertical, alignment, allowed, radius, heightLimit, maxDistance };
+    }
+
+    function catchHint(metrics) {
+      if (metrics.alignment < 0.42) return '공 쪽을 바라봐야 포구할 수 있어';
+      if (metrics.distance > metrics.maxDistance) return `너무 멀어! ${metrics.maxDistance.toFixed(2)}m 안으로 접근해`;
+      if (metrics.vertical > metrics.heightLimit) return gameState.ballType === '뜬공' ? '공이 높아! R로 점프 포구해' : '글러브 높이를 공에 맞춰';
+      return '지금 클릭하면 포구 가능!';
     }
 
     function attemptCatch() {
@@ -607,14 +708,8 @@
         const perfect = metrics.distance < (player.isDiving ? 1.55 : 0.72)
           && metrics.vertical < 0.38 && metrics.alignment > 0.82;
         completeCatch(perfect ? 'PERFECT' : 'GOOD');
-      } else if (metrics.alignment < 0.42) {
-        showToast('공을 바라보고 포구해!');
-      } else if (metrics.distance > (player.isDiving ? 2.65 : 1.42)) {
-        showToast('공에 더 가까이 이동해!');
-      } else if (metrics.vertical > metrics.heightLimit) {
-        showToast(gameState.ballType === '뜬공' ? 'R 키로 점프해서 잡아!' : '글러브 높이를 맞춰 봐!');
       } else {
-        showToast('타이밍이 맞지 않았어!');
+        showToast(catchHint(metrics));
       }
     }
 
@@ -639,17 +734,32 @@
     }
 
     function presentPlayResult(title, detail) {
+      if (gameState.nextPlayTimer) {
+        clearTimeout(gameState.nextPlayTimer);
+        gameState.nextPlayTimer = null;
+      }
       if (gameState.attempts >= ROUND_SIZE) {
         const rate = gameState.attempts ? Math.round((gameState.catches / gameState.attempts) * 100) : 0;
         ui.resultTitle.textContent = 'ROUND COMPLETE';
         ui.resultText.textContent = `10번의 수비가 끝났어! 포구 ${gameState.catches}회 · 실패 ${gameState.misses}회 · 아웃 ${gameState.outs}회 · 포구 성공률 ${rate}% · 최종 점수 ${gameState.score}점. 마지막 플레이: ${title}.`;
         ui.nextBtn.textContent = '새 경기 시작';
-      } else {
-        ui.resultTitle.textContent = title;
-        ui.resultText.textContent = `${detail} 현재 점수 ${gameState.score}점. 다음 수비를 준비해 봐.`;
-        ui.nextBtn.textContent = `다음 타구 (${gameState.attempts + 1} / ${ROUND_SIZE})`;
+        ui.result.style.display = 'grid';
+        document.exitPointerLock?.();
+        return;
       }
-      ui.result.style.display = 'grid';
+
+      // 개별 수비 결과는 화면 중앙에 잠깐만 표시하고 다음 타구를 자동 시작한다.
+      ui.result.style.display = 'none';
+      setPhase('ready', '다음 타구 준비');
+      setMessage(title, `${detail} · 잠시 후 다음 타구가 자동으로 시작돼. F를 누르면 바로 시작할 수 있어.`);
+      showToast(`${title} · 다음 타구 자동 시작`);
+      const completedAttempt = gameState.attempts;
+      gameState.nextPlayTimer = setTimeout(() => {
+        gameState.nextPlayTimer = null;
+        if (gameState.started && gameState.phase === 'ready' && gameState.attempts === completedAttempt && gameState.attempts < ROUND_SIZE) {
+          startHit();
+        }
+      }, 1500);
     }
 
     function continueAfterResult() {
@@ -678,13 +788,12 @@
       runnerModel.visible = false;
       updateStats();
       setPhase('result', '포구 실패');
-      setMessage('MISSED BALL', '공을 놓쳤어. 다음 타구에서 위치와 타이밍을 조절해 봐.');
-      showToast('아쉽다! 다음 타구에 도전해 보자.');
-      presentPlayResult('MISSED BALL', '이번 타구를 놓쳤어. 공과의 거리를 좁히고, 공이 가까워졌을 때 방향을 맞춰 클릭해 봐.');
+      setMessage('MISSED BALL', '공이 낙하지점에 도달할 때까지 포구 조건을 만족하지 못했어.');
+      showToast('MISSED BALL · 다음 타구 자동 시작');
       ui.reticle.style.opacity = '0';
       clearBall();
-      document.exitPointerLock?.();
       updateStats();
+      presentPlayResult('MISSED BALL', '공이 비행을 마칠 때까지 유효한 포구가 없었어.');
     }
 
     function beginThrowTiming() {
@@ -725,7 +834,6 @@
       setPhase('result', isOut ? '아웃' : '세이프');
       presentPlayResult(resultTitle, resultDetail);
       ui.reticle.style.opacity = '0';
-      document.exitPointerLock?.();
       updateStats();
     }
 
@@ -800,7 +908,7 @@
       requestLock();
     });
     $('#howBtn').addEventListener('click', () => {
-      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nR: 점프 포구(뜬공)\nEnter: 1루 송구 게이지 시작 / Enter: 릴리스\nESC: 마우스 잠금 해제\n\n포구는 공과의 거리, 높이, 바라보는 방향, 클릭 타이밍이 모두 중요합니다. 포구 후 마우스로 1루를 조준하고 Enter를 눌러 송구하세요. 10회 수비 라운드입니다.');
+      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nR: 점프 포구(뜬공)\nEnter: 1루 송구 게이지 시작 / Enter: 릴리스\nESC: 마우스 잠금 해제\n\n포구 조건: 일반 포구는 공까지 수평거리 1.42m 이내, 다이빙은 2.65m 이내여야 해요. 공 높이 차이와 공을 바라보는 방향(정면 기준 약 65도 안쪽)도 맞아야 합니다. 클릭 한 번 실패했다고 바로 놓치는 건 아니고, 공이 도착할 때까지 포구에 성공하지 못하면 MISSED BALL입니다. 포구 후 마우스로 1루를 조준하고 Enter를 눌러 송구하세요. 10회 수비 라운드이며 각 플레이 뒤 다음 타구는 자동 시작됩니다.');
     });
     $('#nextBtn').addEventListener('click', continueAfterResult);
 
@@ -895,9 +1003,12 @@
       cameraRig.rotation.z = player.isDiving ? -0.48 : (hasMovement ? Math.sin(elapsed * 10) * 0.035 : 0);
       cameraRig.rotation.x = player.isDiving ? -0.24 : (player.isJumping ? 0.12 : 0);
       glove.rotation.x = player.isDiving ? -0.28 : (player.isJumping ? -0.55 : THREE.MathUtils.damp(glove.rotation.x, 0, 8, dt));
-      const gloveReach = player.isDiving ? -0.72 : (player.isJumping ? -0.78 : (player.catchTimer > 0 ? -0.72 : -1.02));
-      glove.position.z = THREE.MathUtils.damp(glove.position.z, gloveReach, 10, dt);
-      glove.position.x = THREE.MathUtils.damp(glove.position.x, player.catchTimer > 0 ? -0.18 : -0.47, 10, dt);
+      const gloveReach = player.isDiving ? -0.82 : (player.isJumping ? -0.80 : (player.catchTimer > 0 ? -0.78 : -1.08));
+      glove.position.z = THREE.MathUtils.damp(glove.position.z, gloveReach, 9, dt);
+      const gloveSide = player.isDiving ? -0.10 : (player.isJumping ? -0.28 : (player.catchTimer > 0 ? -0.28 : -0.50));
+      glove.position.x = THREE.MathUtils.damp(glove.position.x, gloveSide, 9, dt);
+      glove.rotation.y = THREE.MathUtils.damp(glove.rotation.y, player.catchTimer > 0 ? -0.02 : -0.20, 8, dt);
+      glove.scale.setScalar(THREE.MathUtils.damp(glove.scale.x, player.catchTimer > 0 ? 1.08 : 1.0, 9, dt));
     }
 
     function updateBatter(dt) {
@@ -989,8 +1100,8 @@
       const metrics = catchMetrics();
       const catchRadius = player.isDiving ? DIVE_CATCH_RADIUS : NORMAL_CATCH_RADIUS;
       const inReach = metrics.distance < catchRadius * 1.8 && metrics.vertical < (player.isDiving ? 2.2 : (player.isJumping ? 2.2 : 1.45));
-      setPhase(inReach ? 'catch' : 'flight', inReach ? (metrics.allowed ? '포구 기회! 클릭!' : '위치·방향을 맞춰라') : `${gameState.ballType} 추적 중`);
-      ui.distance.textContent = `공과 거리: ${metrics.distance.toFixed(1)}m · 조준 ${Math.round(Math.max(0, metrics.alignment) * 100)}%`;
+      setPhase(inReach ? 'catch' : 'flight', inReach ? (metrics.allowed ? '포구 가능! 지금 클릭' : catchHint(metrics)) : `${gameState.ballType} 추적 중`);
+      ui.distance.textContent = `거리 ${metrics.distance.toFixed(1)}m / 허용 ${metrics.maxDistance.toFixed(2)}m · 방향 ${Math.round(Math.max(0, metrics.alignment) * 100)}%`;
       const timing = THREE.MathUtils.clamp(1 - metrics.distance / (catchRadius * 2.6), 0, 1);
       ui.meter.style.width = `${timing * 100}%`;
       ui.reticle.style.opacity = inReach ? '1' : '0';
