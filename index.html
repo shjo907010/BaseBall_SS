@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#10231d">
-  <title>SHORTSTOP 3D | 유격수 수비 시뮬레이터</title>
+  <title>SHORTSTOP 3D v1.5 | 유격수 수비 시뮬레이터</title>
   <style>
     :root {
       color-scheme: dark;
@@ -81,7 +81,7 @@
 <body>
   <div id="game" aria-label="SHORTSTOP 3D 야구장"></div>
   <div id="hud">
-    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING · V1.4</small></div>
+    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING · V1.5</small></div>
     <div id="stats">
       <div class="panel stat">수비 회차<b id="playsCount">0 / 10</b></div>
       <div class="panel stat">포구 성공<b id="catchCount">0</b></div>
@@ -531,7 +531,7 @@
       diveCooldown: 0,
       isJumping: false,
       jumpElapsed: 0,
-      jumpDuration: 0.72,
+      jumpDuration: 1.05,
       jumpCooldown: 0,
       catchTimer: 0,
       diveDirection: new THREE.Vector3(0, 0, -1),
@@ -668,13 +668,13 @@
         gameState.ballArc = THREE.MathUtils.randFloat(0.08, 0.2);
       } else {
         gameState.ballType = '뜬공';
-        gameState.ballDuration = THREE.MathUtils.randFloat(2.15, 2.8);
-        gameState.ballArc = THREE.MathUtils.randFloat(2.45, 3.25);
+        gameState.ballDuration = THREE.MathUtils.randFloat(3.05, 3.75);
+        gameState.ballArc = THREE.MathUtils.randFloat(2.5, 3.15);
       }
 
       gameState.ballStart.set(THREE.MathUtils.randFloat(-1.7, 1.7), 0.45, -25.2);
-      const targetX = gameState.ballType === '뜬공' ? THREE.MathUtils.randFloat(-18.0, 16.0) : THREE.MathUtils.randFloat(-14.5, 3.0);
-      const targetZ = gameState.ballType === '뜬공' ? THREE.MathUtils.randFloat(-12.0, 14.0) : THREE.MathUtils.randFloat(-12.5, 11.5);
+      const targetX = gameState.ballType === '뜬공' ? THREE.MathUtils.randFloat(-12.5, 7.5) : THREE.MathUtils.randFloat(-14.5, 3.0);
+      const targetZ = gameState.ballType === '뜬공' ? THREE.MathUtils.randFloat(-7.0, 12.0) : THREE.MathUtils.randFloat(-12.5, 11.5);
       gameState.ballTarget.set(targetX, 0.22, targetZ);
       gameState.ball = makeBallMesh();
       gameState.ball.position.copy(gameState.ballStart);
@@ -686,14 +686,16 @@
       gameState.ballShadow.position.set(gameState.ballStart.x, 0.012, gameState.ballStart.z);
       scene.add(gameState.ballShadow);
 
-      const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xc6ef79, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
-      gameState.targetMarker = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.72, 28), markerMaterial);
+      const isFlyBall = gameState.ballType === '뜬공';
+      const markerMaterial = new THREE.MeshBasicMaterial({ color: isFlyBall ? 0xf2ca75 : 0xc6ef79, transparent: true, opacity: isFlyBall ? 0.56 : 0.5, side: THREE.DoubleSide, depthWrite: false });
+      // 뜬공 낙하지점은 큰 원으로 표시해 어디에 자리 잡아야 하는지 쉽게 알 수 있게 한다.
+      gameState.targetMarker = new THREE.Mesh(new THREE.RingGeometry(isFlyBall ? 2.7 : 0.55, isFlyBall ? 3.05 : 0.72, 40), markerMaterial);
       gameState.targetMarker.rotation.x = -Math.PI / 2;
       gameState.targetMarker.position.set(targetX, 0.035, targetZ);
       scene.add(gameState.targetMarker);
 
       setPhase('flight', `${gameState.ballType} 추적 중`);
-      setMessage(`${gameState.ballType} 발생!`, gameState.ballType === '뜬공' ? '낙하지점 아래로 이동하고 R로 점프한 뒤 클릭해 포구하세요.' : '낙하지점으로 이동하고 공이 가까워지는 순간 클릭해 포구하세요.');
+      setMessage(`${gameState.ballType} 발생!`, gameState.ballType === '뜬공' ? '큰 노란 원 안으로 이동하세요. 공이 내려오기 시작하면 R로 점프하고, 공이 머리 위에 왔을 때 클릭하세요.' : '낙하지점으로 이동하고 공이 가까워지는 순간 클릭해 포구하세요.');
       ui.meter.style.width = '0%';
       ui.distance.textContent = '공과 거리 계산 중';
     }
@@ -702,27 +704,67 @@
     // 7. 포구 및 다이빙 판정
     // ------------------------------------------------------------
     function catchMetrics() {
-      if (!gameState.ball) return { distance: Infinity, vertical: Infinity, alignment: -1, allowed: false };
+      if (!gameState.ball) return { distance: Infinity, vertical: Infinity, alignment: -1, allowed: false, maxDistance: 0 };
       const ball = gameState.ball.position;
-      const distance = Math.hypot(ball.x - player.position.x, ball.z - player.position.z);
-      const gloveHeight = player.isDiving ? 0.55 : (player.isJumping ? 2.5 : 0.82);
+      const isFlyBall = gameState.ballType === '뜬공';
+      const ballProgress = gameState.ballDuration > 0
+        ? THREE.MathUtils.clamp(gameState.ballAge / gameState.ballDuration, 0, 1)
+        : 0;
+
+      // 뜬공은 현재 공의 수평 위치가 아니라 바닥의 노란 낙하지점 기준으로 자리 잡는다.
+      const aimPoint = isFlyBall ? gameState.ballTarget : ball;
+      const distance = Math.hypot(aimPoint.x - player.position.x, aimPoint.z - player.position.z);
+      const jumpProgress = player.isJumping
+        ? THREE.MathUtils.clamp(player.jumpElapsed / player.jumpDuration, 0, 1)
+        : 0;
+      // 점프 진행도에 따라 글러브 높이가 부드럽게 올라갔다 내려온다.
+      const jumpLift = player.isJumping ? Math.sin(jumpProgress * Math.PI) * 1.9 : 0;
+      const gloveHeight = player.isDiving ? 0.55 : (0.82 + jumpLift);
       const vertical = Math.abs(ball.y - gloveHeight);
-      const radius = player.isDiving ? DIVE_CATCH_RADIUS : NORMAL_CATCH_RADIUS;
-      const heightLimit = player.isDiving ? 1.75 : (player.isJumping ? 1.4 : 1.05);
       const viewForward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-      const toBall = new THREE.Vector3(ball.x - player.position.x, 0, ball.z - player.position.z);
-      const alignment = toBall.lengthSq() > 0.001 ? viewForward.dot(toBall.normalize()) : 1;
-      // 거리·높이뿐 아니라 바라보는 방향과 클릭 타이밍도 만족해야 포구 가능
-      const timingRadius = player.isDiving ? 2.65 : 1.42;
-      const maxDistance = Math.min(radius, timingRadius);
-      const allowed = distance <= maxDistance && vertical <= heightLimit && alignment >= 0.42;
-      return { distance, vertical, alignment, allowed, radius, heightLimit, maxDistance };
+      const toAim = new THREE.Vector3(aimPoint.x - player.position.x, 0, aimPoint.z - player.position.z);
+      const alignment = toAim.lengthSq() > 0.001 ? viewForward.dot(toAim.normalize()) : 1;
+
+      let maxDistance;
+      let heightLimit;
+      let requiredAlignment;
+      if (isFlyBall) {
+        // 뜬공은 넓은 낙하지점 안에서 점프하면 일반 타구보다 여유 있게 포구된다.
+        maxDistance = player.isJumping ? 3.6 : 2.25;
+        heightLimit = player.isJumping ? 2.9 : 1.05;
+        requiredAlignment = -0.05;
+      } else if (player.isDiving) {
+        maxDistance = 2.65;
+        heightLimit = 1.85;
+        requiredAlignment = 0.25;
+      } else {
+        maxDistance = 1.85;
+        heightLimit = player.isJumping ? 1.55 : 1.05;
+        requiredAlignment = 0.30;
+      }
+
+      const isDescending = ballProgress >= 0.52;
+      const needsJump = isFlyBall && ball.y > 1.45;
+      const allowed = distance <= maxDistance
+        && vertical <= heightLimit
+        && alignment >= requiredAlignment
+        && (!needsJump || player.isJumping)
+        && (!isFlyBall || isDescending);
+      return { distance, vertical, alignment, allowed, maxDistance, heightLimit, requiredAlignment, isFlyBall, needsJump, jumpProgress, gloveHeight, ballProgress, isDescending };
     }
 
     function catchHint(metrics) {
-      if (metrics.alignment < 0.42) return '공 쪽을 바라봐야 포구할 수 있어';
-      if (metrics.distance > metrics.maxDistance) return `너무 멀어! ${metrics.maxDistance.toFixed(2)}m 안으로 접근해`;
-      if (metrics.vertical > metrics.heightLimit) return gameState.ballType === '뜬공' ? '공이 높아! R로 점프 포구해' : '글러브 높이를 공에 맞춰';
+      if (metrics.isFlyBall) {
+        if (metrics.distance > metrics.maxDistance) return `큰 노란 원 안으로 이동해! 낙하지점까지 ${metrics.distance.toFixed(1)}m`;
+        if (!metrics.isDescending) return '공이 아직 올라가는 중이야. 노란 원 안에서 기다려!';
+        if (metrics.needsJump && !player.isJumping) return '공이 내려와! 지금 R로 점프하고 클릭해!';
+        if (metrics.vertical > metrics.heightLimit) return '점프한 상태에서 공이 머리 위로 올 때 클릭해!';
+        if (metrics.alignment < metrics.requiredAlignment) return '낙하지점 방향으로 몸을 돌려';
+        return '지금 클릭하면 뜬공을 잡을 수 있어!';
+      }
+      if (metrics.alignment < metrics.requiredAlignment) return '공 쪽을 바라봐야 포구할 수 있어';
+      if (metrics.distance > metrics.maxDistance) return `너무 멀어! ${metrics.maxDistance.toFixed(1)}m 안으로 접근해`;
+      if (metrics.vertical > metrics.heightLimit) return '글러브 높이를 공에 맞춰';
       return '지금 클릭하면 포구 가능!';
     }
 
@@ -730,8 +772,8 @@
       if (!gameState.ball || !['flight', 'catch'].includes(gameState.phase)) return;
       const metrics = catchMetrics();
       if (metrics.allowed) {
-        const perfect = metrics.distance < (player.isDiving ? 1.55 : 0.72)
-          && metrics.vertical < 0.38 && metrics.alignment > 0.82;
+        const perfect = metrics.distance < (player.isDiving ? 1.9 : (metrics.isFlyBall ? 2.0 : 0.85))
+          && metrics.vertical < (metrics.isFlyBall ? 0.95 : 0.45) && metrics.alignment > (metrics.isFlyBall ? 0.25 : 0.72);
         completeCatch(perfect ? 'PERFECT' : 'GOOD');
       } else {
         showToast(catchHint(metrics));
@@ -933,7 +975,7 @@
       requestLock();
     });
     $('#howBtn').addEventListener('click', () => {
-      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nR: 점프 포구(뜬공)\n송구: 포구 후 1루를 바라보고 클릭 → 게이지가 초록색일 때 다시 클릭\nEnter도 송구 게이지 시작/릴리스에 사용할 수 있어요.\nESC: 마우스 잠금 해제\n\n포구 조건: 일반 포구는 공까지 수평거리 1.42m 이내, 다이빙은 2.65m 이내여야 해요. 공 높이 차이와 공을 바라보는 방향도 맞아야 합니다.');
+      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nR: 점프 포구(뜬공, 공이 내려올 때)\n송구: 포구 후 1루를 바라보고 클릭 → 게이지가 초록색일 때 다시 클릭\nEnter도 송구 게이지 시작/릴리스에 사용할 수 있어요.\nESC: 마우스 잠금 해제\n\n포구 조건: 땅볼은 공에 가까이 가서 클릭하세요. 뜬공은 큰 노란 낙하지점 원 안으로 이동한 뒤 공이 내려올 때 R로 점프하고 클릭하면 됩니다. 뜬공은 낙하지점 거리 기준으로 넉넉하게 판정합니다.');
     });
     $('#nextBtn').addEventListener('click', continueAfterResult);
 
@@ -1025,7 +1067,7 @@
         cameraHeight = 1.68 - Math.sin(p * Math.PI) * 1.17;
       } else if (player.isJumping) {
         const p = THREE.MathUtils.clamp(player.jumpElapsed / player.jumpDuration, 0, 1);
-        cameraHeight = 1.68 + Math.sin(p * Math.PI) * 1.35;
+        cameraHeight = 1.68 + Math.sin(p * Math.PI) * 1.55;
       }
       const bobAmount = hasMovement && !player.isDiving ? Math.sin(elapsed * (sprint ? 15 : 11)) * 0.035 : 0;
       camera.position.set(player.position.x, cameraHeight + bobAmount, player.position.z);
@@ -1132,11 +1174,11 @@
       }
 
       const metrics = catchMetrics();
-      const catchRadius = player.isDiving ? DIVE_CATCH_RADIUS : NORMAL_CATCH_RADIUS;
-      const inReach = metrics.distance < catchRadius * 1.8 && metrics.vertical < (player.isDiving ? 2.2 : (player.isJumping ? 2.2 : 1.45));
+      const catchRadius = player.isDiving ? DIVE_CATCH_RADIUS : (metrics.isFlyBall ? (player.isJumping ? 3.0 : 1.65) : NORMAL_CATCH_RADIUS);
+      const inReach = metrics.distance < catchRadius * 1.35 && metrics.vertical < (metrics.isFlyBall ? (player.isJumping ? 2.6 : 1.55) : (player.isDiving ? 2.2 : (player.isJumping ? 2.2 : 1.45)));
       setPhase(inReach ? 'catch' : 'flight', inReach ? (metrics.allowed ? '포구 가능! 지금 클릭' : catchHint(metrics)) : `${gameState.ballType} 추적 중`);
-      ui.distance.textContent = `거리 ${metrics.distance.toFixed(1)}m / 허용 ${metrics.maxDistance.toFixed(2)}m · 방향 ${Math.round(Math.max(0, metrics.alignment) * 100)}%`;
-      const timing = THREE.MathUtils.clamp(1 - metrics.distance / (catchRadius * 2.6), 0, 1);
+      ui.distance.textContent = metrics.isFlyBall ? `낙하지점 ${metrics.distance.toFixed(1)}m / 포구 범위 ${metrics.maxDistance.toFixed(1)}m · ${metrics.isDescending ? '하강 중' : '상승 중'}` : `거리 ${metrics.distance.toFixed(1)}m / 허용 ${metrics.maxDistance.toFixed(2)}m · 방향 ${Math.round(Math.max(0, metrics.alignment) * 100)}%`;
+      const timing = THREE.MathUtils.clamp(1 - metrics.distance / (catchRadius * 1.8), 0, 1);
       ui.meter.style.width = `${timing * 100}%`;
       ui.reticle.style.opacity = inReach ? '1' : '0';
       ui.reticle.style.borderColor = metrics.allowed ? '#6bd5a1' : '#f2ca75';
