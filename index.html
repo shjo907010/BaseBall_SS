@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#10231d">
-  <title>SHORTSTOP 3D v1.6 | 유격수 수비 시뮬레이터</title>
+  <title>SHORTSTOP 3D v1.7 | 유격수 수비 시뮬레이터</title>
   <style>
     :root {
       color-scheme: dark;
@@ -81,7 +81,7 @@
 <body>
   <div id="game" aria-label="SHORTSTOP 3D 야구장"></div>
   <div id="hud">
-    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING · V1.6</small></div>
+    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING · V1.7</small></div>
     <div id="stats">
       <div class="panel stat">수비 회차<b id="playsCount">0 / 10</b></div>
       <div class="panel stat">포구 성공<b id="catchCount">0</b></div>
@@ -95,7 +95,7 @@
       <b>이동</b> <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
       <br><b>질주</b> <span class="key">SHIFT</span>　<b>다이빙</b> <span class="key">SPACE</span>
       <br><b>포구</b> <span class="key">CLICK</span>　<b>점프 포구</b> <span class="key">R</span>　<b>타구</b> <span class="key">F</span>
-      <br><b>1루 송구</b> <span class="key">CLICK</span> 1회 게이지 시작 · 다시 클릭 릴리스 <span class="key">ENTER</span>도 가능
+      <br><b>송구</b> 바라보는 방향으로 <span class="key">CLICK</span> 게이지 시작 · 다시 클릭 릴리스 <span class="key">ENTER</span>도 가능
       <br><b>시점</b> 마우스 이동　<b>잠금 해제</b> ESC
     </div>
     <div id="status" class="panel">
@@ -576,6 +576,12 @@
     const moveVector = new THREE.Vector3();
     const tempVector = new THREE.Vector3();
     const gloveWorldPosition = new THREE.Vector3();
+    // 송구는 1루 좌표에 고정하지 않고 카메라가 바라보는 방향으로 진행한다.
+    const throwDirection = new THREE.Vector3();
+    const throwHorizontal = new THREE.Vector3();
+    const throwToFirst = new THREE.Vector3();
+    const throwSide = new THREE.Vector3();
+    const THROW_TARGET_HEIGHT = 0.12;
     const BALL_RADIUS = 0.22;
     const NORMAL_CATCH_RADIUS = 1.7;
     const DIVE_CATCH_RADIUS = 3.35;
@@ -588,7 +594,7 @@
     }
     function setPhase(phase, label) {
       gameState.phase = phase;
-      ui.phase.textContent = label || ({ ready: '수비 대기', flight: '타구 추적 중', catch: '포구 기회!', throwAim: '1루 조준', throwTiming: '송구 타이밍', throwFlight: '송구 중', result: '플레이 종료' }[phase] || phase);
+      ui.phase.textContent = label || ({ ready: '수비 대기', flight: '타구 추적 중', catch: '포구 기회!', throwAim: '송구 방향 설정', throwTiming: '송구 타이밍', throwFlight: '송구 중', result: '플레이 종료' }[phase] || phase);
     }
     function updateStats() {
       ui.catches.textContent = String(gameState.catches);
@@ -795,12 +801,12 @@
       gameState.score += points;
       updateStats();
       clearBall();
-      setPhase('throwAim', '1루 조준');
+      setPhase('throwAim', '송구 방향 설정');
       setMessage('CATCH! 1루로 송구하라', '마우스로 1루를 바라본 뒤 클릭해 게이지를 시작하고, 다시 클릭해 송구하세요. Enter도 사용할 수 있어요.');
       showToast(`${quality === 'PERFECT' ? '완벽한 포구!' : '포구 성공!'} · 이제 1루 송구`);
       ui.reticle.style.opacity = '0';
       ui.meter.style.width = '0%';
-      ui.distance.textContent = '1루 조준 후 클릭 → 다시 클릭해 송구';
+      ui.distance.textContent = '던질 방향을 바라본 뒤 클릭해 송구';
     }
 
     function presentPlayResult(title, detail) {
@@ -866,17 +872,36 @@
       presentPlayResult('MISSED BALL', '공이 비행을 마칠 때까지 유효한 포구가 없었어.');
     }
 
+    function updateThrowAimFromView() {
+      // 카메라 정면의 3D 방향을 송구 방향으로 사용한다.
+      camera.getWorldDirection(throwDirection).normalize();
+      throwHorizontal.copy(throwDirection).setY(0);
+      if (throwHorizontal.lengthSq() < 0.0001) {
+        throwHorizontal.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+      }
+      throwHorizontal.normalize();
+      throwToFirst.copy(FIRST).sub(player.position).setY(0).normalize();
+      gameState.throwAimDot = THREE.MathUtils.clamp(throwHorizontal.dot(throwToFirst), -1, 1);
+
+      // 화면 중앙 조준선이 지면 높이와 만나는 지점을 송구 목표로 삼는다.
+      // 위쪽을 보거나 거의 수평으로 볼 때는 시선 방향으로 일정 거리 날아간다.
+      let distance = 28;
+      if (throwDirection.y < -0.015) {
+        const groundDistance = (THROW_TARGET_HEIGHT - camera.position.y) / throwDirection.y;
+        if (Number.isFinite(groundDistance) && groundDistance > 0) distance = THREE.MathUtils.clamp(groundDistance, 2, 48);
+      }
+      gameState.throwTarget.copy(camera.position).addScaledVector(throwDirection, distance);
+    }
+
     function beginThrowTiming() {
       if (gameState.phase !== 'throwAim') return;
-      forward.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-      tempVector.copy(FIRST).sub(player.position).setY(0).normalize();
-      gameState.throwAimDot = THREE.MathUtils.clamp(forward.dot(tempVector), -1, 1);
+      updateThrowAimFromView();
       gameState.throwClock = 0;
       gameState.throwMeterValue = 0.5;
       setPhase('throwTiming', '송구 타이밍');
-      setMessage('송구 타이밍을 잡아라', '게이지가 초록색 중앙에 올 때 다시 클릭하면 공을 놓습니다. Enter도 가능해요.');
-      ui.distance.textContent = `1루 조준 정확도: ${Math.round(Math.max(0, gameState.throwAimDot) * 100)}%`;
-      showToast('송구 게이지 시작! 다시 클릭해 송구!');
+      setMessage('송구 타이밍을 잡아라', '화면 중앙 조준점이 향하는 방향으로 던져. 1루를 바라보면 아웃을 노릴 수 있어.');
+      ui.distance.textContent = `현재 시선 · 1루 정렬 ${Math.round(Math.max(0, gameState.throwAimDot) * 100)}%`;
+      showToast('현재 바라보는 방향으로 송구합니다! 다시 클릭해 던지기!');
     }
 
     function finishThrow(isOut, accurate, timingLabel) {
@@ -895,7 +920,7 @@
         resultTitle = 'SAFE';
         resultDetail = accurate
           ? '송구는 정확했지만 주자가 먼저 1루에 도착했어.'
-          : '송구 방향 또는 타이밍이 빗나갔어. 1루를 정확히 조준하고 게이지 중앙에서 다시 클릭해 봐.';
+          : '공은 바라본 방향으로 날아갔지만 1루를 벗어났어. 화면 중앙 조준점을 1루에 맞춰 던져 봐.';
         setMessage('SAFE', accurate ? '송구는 정확했지만 주자가 먼저 도착했어.' : '송구가 빗나가 주자가 세이프야.');
         showToast(accurate ? '아슬아슬하게 세이프!' : '송구 실책!');
       }
@@ -909,31 +934,38 @@
 
     function releaseThrow() {
       if (gameState.phase !== 'throwTiming') return;
+      // 릴리스 순간의 시선을 최종 송구 방향으로 다시 읽는다.
+      updateThrowAimFromView();
       const timingError = Math.abs(gameState.throwMeterValue - 0.53);
       const aimScore = THREE.MathUtils.clamp((gameState.throwAimDot - 0.25) / 0.72, 0, 1);
       const timingScore = THREE.MathUtils.clamp(1 - timingError * 2.25, 0, 1);
       const accuracy = aimScore * 0.62 + timingScore * 0.38;
       const isPerfect = gameState.throwAimDot > 0.93 && timingError < 0.09;
       const timingLabel = isPerfect ? 'PERFECT' : (timingError < 0.2 ? 'GOOD' : 'EARLY / LATE');
-      const perpendicular = new THREE.Vector3(tempVector.z, 0, -tempVector.x);
-      const spread = (1 - accuracy) * 7.0;
+
+      // 타이밍 오차는 약간의 좌우 편차만 만든다. 조준 방향 자체는 카메라 정면을 유지한다.
+      throwSide.set(throwDirection.z, 0, -throwDirection.x);
+      if (throwSide.lengthSq() > 0.0001) throwSide.normalize();
+      const spread = (1 - timingScore) * 0.72;
       gameState.throwSpread = spread;
-      gameState.throwTarget.copy(FIRST).addScaledVector(perpendicular, spread);
-      gameState.throwTarget.y = 1.05;
-      forward.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-      gameState.throwStart.set(player.position.x, camera.position.y - 0.25, player.position.z).addScaledVector(forward, 0.72);
+      gameState.throwTarget.addScaledVector(throwSide, spread);
+      gameState.throwTarget.y = Math.max(0.18, gameState.throwTarget.y);
+
+      // 공도 시선 레이 위에서 출발시켜 실제 비행 방향이 조준 방향과 일치하게 한다.
+      gameState.throwStart.copy(camera.position).addScaledVector(throwDirection, 0.58);
       gameState.throwDuration = 0.72 + (1 - accuracy) * 0.42;
       gameState.throwAge = 0;
       gameState.throwTimingLabel = timingLabel;
       gameState.throwAccuracy = accuracy;
-      gameState.throwWasAccurate = spread < 1.75;
+      const targetError = new THREE.Vector2(gameState.throwTarget.x - FIRST.x, gameState.throwTarget.z - FIRST.z).length();
+      gameState.throwWasAccurate = targetError < 3.25;
       clearBall();
       gameState.ball = makeBallMesh();
       gameState.ball.position.copy(gameState.throwStart);
       scene.add(gameState.ball);
-      setPhase('throwFlight', '1루 송구 중');
-      setMessage('THROW!', '공이 1루로 날아가고 있어!');
-      ui.distance.textContent = `송구 정확도: ${Math.round(accuracy * 100)}%`;
+      setPhase('throwFlight', '송구 중');
+      setMessage('THROW!', '공이 화면 중앙 조준 방향으로 날아가고 있어!');
+      ui.distance.textContent = `송구 방향 · 1루까지 ${targetError.toFixed(1)}m`;
       ui.meter.style.width = `${Math.round(accuracy * 100)}%`;
     }
 
@@ -978,7 +1010,7 @@
       requestLock();
     });
     $('#howBtn').addEventListener('click', () => {
-      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nR: 점프 포구(뜬공, 공이 내려올 때)\n송구: 포구 후 1루를 바라보고 클릭 → 게이지가 초록색일 때 다시 클릭\nEnter도 송구 게이지 시작/릴리스에 사용할 수 있어요.\nESC: 마우스 잠금 해제\n\n포구 조건: 땅볼은 공에 가까이 가서 클릭하세요. 뜬공은 노란 낙하지점 원을 참고하되 실제 공의 현재 위치로 이동하세요. 공이 글러브보다 높으면 R로 점프하고, 상승 중이든 하강 중이든 공과 글러브가 가까울 때 클릭하면 잡을 수 있습니다.');
+      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nR: 점프 포구(뜬공, 공이 내려올 때)\n송구: 포구 후 원하는 방향을 바라보고 클릭 → 초록색일 때 다시 클릭\nEnter도 송구 게이지 시작/릴리스에 사용할 수 있어요.\nESC: 마우스 잠금 해제\n\n포구 조건: 땅볼은 공에 가까이 가서 클릭하세요. 뜬공은 노란 낙하지점 원을 참고하되 실제 공의 현재 위치로 이동하세요. 공이 글러브보다 높으면 R로 점프하고, 상승 중이든 하강 중이든 공과 글러브가 가까울 때 클릭하면 잡을 수 있습니다.');
     });
     $('#nextBtn').addEventListener('click', continueAfterResult);
 
@@ -1121,11 +1153,8 @@
         gameState.throwClock += dt;
         gameState.throwMeterValue = (Math.sin(gameState.throwClock * 3.35 - Math.PI / 2) + 1) / 2;
         ui.meter.style.width = `${Math.round(gameState.throwMeterValue * 100)}%`;
-        forward.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-        tempVector.copy(FIRST).sub(player.position).setY(0).normalize();
-        const alignment = THREE.MathUtils.clamp(forward.dot(tempVector), -1, 1);
-        gameState.throwAimDot = alignment;
-        ui.distance.textContent = `1루 조준: ${Math.round(Math.max(0, alignment) * 100)}% · 클릭으로 릴리스`;
+        updateThrowAimFromView();
+        ui.distance.textContent = `현재 시선 방향 · 1루 정렬 ${Math.round(Math.max(0, gameState.throwAimDot) * 100)}% · 클릭으로 릴리스`;
         return;
       }
       if (!gameState.ball) return;
