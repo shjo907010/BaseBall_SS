@@ -81,8 +81,9 @@
 <body>
   <div id="game" aria-label="SHORTSTOP 3D 야구장"></div>
   <div id="hud">
-    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING</small></div>
+    <div id="brand" class="panel">SHORT<span>STOP</span><small>3D FIELDING · V1.1</small></div>
     <div id="stats">
+      <div class="panel stat">수비 회차<b id="playsCount">0 / 10</b></div>
       <div class="panel stat">포구 성공<b id="catchCount">0</b></div>
       <div class="panel stat">포구 실패<b id="missCount">0</b></div>
       <div class="panel stat">아웃<b id="outCount">0</b></div>
@@ -93,13 +94,13 @@
     <div id="help" class="panel">
       <b>이동</b> <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
       <br><b>질주</b> <span class="key">SHIFT</span>　<b>다이빙</b> <span class="key">SPACE</span>
-      <br><b>포구</b> <span class="key">CLICK</span>　<b>타구</b> <span class="key">F</span>
+      <br><b>포구</b> <span class="key">CLICK</span>　<b>점프 포구</b> <span class="key">R</span>　<b>타구</b> <span class="key">F</span>
       <br><b>1루 송구</b> <span class="key">ENTER</span>　<b>송구 릴리스</b> <span class="key">ENTER</span>
       <br><b>시점</b> 마우스 이동　<b>잠금 해제</b> ESC
     </div>
     <div id="status" class="panel">
-      <div id="phase">준비 완료</div>
-      <div id="distance">공과 거리: --</div>
+      <div id="phase">10회 수비 준비</div>
+      <div id="distance">공과 거리: --</div><div id="diveStatus" style="margin-top:5px;color:#c6ef79">다이빙 준비 완료</div>
       <div id="meterWrap"><div id="meter"></div></div>
     </div>
     <div id="toast">수비 연습을 시작합니다.</div>
@@ -109,12 +110,12 @@
     <div class="card">
       <div class="eyebrow">BASEBALL FIELDING SIMULATOR · THREE.JS</div>
       <h1>OWN THE<br><span>INFIELD.</span></h1>
-      <p class="desc">유격수의 눈으로 실제 3D 야구장을 누벼 보세요. WASD로 타구를 쫓고, 공이 글러브에 도달하는 순간 클릭해 포구하세요. 급한 타구는 SPACE로 다이빙할 수 있습니다.</p>
+      <p class="desc">저폴리곤 3D 야구장에서 유격수 수비를 경험하세요. 타자의 타격과 함께 날아오는 공을 WASD로 쫓고, 위치와 타이밍을 맞춰 포구하세요. 높은 뜬공은 R로 점프해 잡고, 급한 타구는 SPACE로 다이빙할 수 있습니다. 10번의 수비로 실력을 증명하세요.</p>
       <div class="actions">
         <button id="startBtn" class="primary" type="button">수비 연습 시작 →</button>
         <button id="howBtn" class="secondary" type="button">조작 방법</button>
       </div>
-      <div class="foot"><span><b>CAMERA</b> FIRST PERSON</span><span><b>GRAPHICS</b> LOW-POLY 3D</span><span><b>ENGINE</b> THREE.JS</span></div>
+      <div class="foot"><span><b>CAMERA</b> FIRST PERSON</span><span><b>MODE</b> 10 PLAYS</span><span><b>ENGINE</b> THREE.JS</span></div>
     </div>
   </section>
 
@@ -355,9 +356,16 @@
     const runnerStart = new THREE.Vector3(0.2, 0, -24.0);
     const runnerTarget = new THREE.Vector3(17.2, 0, -6.2);
 
-    // 타자의 배트
+    // 타자의 배트: 타격 때 몸통과 함께 회전하는 피벗에 연결
+    const batPivot = new THREE.Group();
+    batPivot.position.set(0.34, 1.48, 0.12);
+    batterModel.add(batPivot);
     const bat = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.09, 1.5, 7), material(0x986b40));
-    bat.position.set(1.05, 1.9, -25.15); bat.rotation.z = -0.8; bat.castShadow = true; scene.add(bat);
+    bat.position.set(0.34, 0.35, 0.02);
+    bat.rotation.z = -0.8;
+    bat.castShadow = true;
+    batPivot.add(bat);
+    let batterSwingTimer = -1;
 
     // ------------------------------------------------------------
     // 4. 1인칭 유격수와 글러브
@@ -396,7 +404,7 @@
     // ------------------------------------------------------------
     const $ = (selector) => document.querySelector(selector);
     const ui = {
-      overlay: $('#overlay'), result: $('#result'), resultTitle: $('#resultTitle'), resultText: $('#resultText'),
+      overlay: $('#overlay'), result: $('#result'), resultTitle: $('#resultTitle'), resultText: $('#resultText'), plays: $('#playsCount'), diveStatus: $('#diveStatus'),
       message: $('#message'), sub: $('#submessage'), phase: $('#phase'), distance: $('#distance'), meter: $('#meter'),
       reticle: $('#reticle'), toast: $('#toast'), catches: $('#catchCount'), misses: $('#missCount'), outs: $('#outCount'), score: $('#scoreCount')
     };
@@ -408,6 +416,11 @@
       diveElapsed: 0,
       diveDuration: 0.72,
       diveCooldown: 0,
+      isJumping: false,
+      jumpElapsed: 0,
+      jumpDuration: 0.72,
+      jumpCooldown: 0,
+      catchTimer: 0,
       diveDirection: new THREE.Vector3(0, 0, -1),
       bob: 0
     };
@@ -439,6 +452,7 @@
       outs: 0,
       score: 0,
       attempts: 0,
+      roundSize: 10,
       toastTimer: 0
     };
     const keys = new Set();
@@ -451,6 +465,7 @@
     const NORMAL_CATCH_RADIUS = 1.7;
     const DIVE_CATCH_RADIUS = 3.35;
     const PITCH_LIMIT = 1.52;
+    const ROUND_SIZE = 10;
 
     function setMessage(main, sub = '') {
       ui.message.firstChild.textContent = main;
@@ -465,6 +480,8 @@
       ui.misses.textContent = String(gameState.misses);
       ui.outs.textContent = String(gameState.outs);
       ui.score.textContent = String(gameState.score);
+      ui.plays.textContent = `${Math.min(gameState.attempts, ROUND_SIZE)} / ${ROUND_SIZE}`;
+      ui.diveStatus.textContent = player.diveCooldown > 0 ? `다이빙 회복 ${player.diveCooldown.toFixed(1)}초` : (player.isJumping ? '점프 포구 중' : '다이빙 준비 완료');
     }
     function showToast(text) {
       ui.toast.textContent = text;
@@ -505,32 +522,41 @@
     function startHit() {
       if (!gameState.started) return;
       if (!['ready', 'result'].includes(gameState.phase)) return;
+      if (gameState.attempts >= ROUND_SIZE) return;
       ui.result.style.display = 'none';
       clearBall();
       gameState.attempts++;
+      updateStats();
+      batterSwingTimer = 0;
+      player.isDiving = false;
+      player.isJumping = false;
       gameState.ballAge = 0;
       gameState.runnerProgress = 0;
       runnerModel.position.copy(runnerStart);
       runnerModel.visible = true;
 
       const r = Math.random();
-      if (r < 0.60) {
+      if (r < 0.46) {
         gameState.ballType = '땅볼';
         gameState.ballDuration = THREE.MathUtils.randFloat(2.0, 2.7);
         gameState.ballArc = THREE.MathUtils.randFloat(0.13, 0.28);
-      } else if (r < 0.84) {
+      } else if (r < 0.72) {
         gameState.ballType = '강한 타구';
         gameState.ballDuration = THREE.MathUtils.randFloat(1.35, 1.85);
-        gameState.ballArc = THREE.MathUtils.randFloat(1.5, 2.8);
-      } else {
+        gameState.ballArc = THREE.MathUtils.randFloat(1.5, 2.5);
+      } else if (r < 0.91) {
         gameState.ballType = '느린 타구';
         gameState.ballDuration = THREE.MathUtils.randFloat(2.8, 3.4);
         gameState.ballArc = THREE.MathUtils.randFloat(0.08, 0.2);
+      } else {
+        gameState.ballType = '뜬공';
+        gameState.ballDuration = THREE.MathUtils.randFloat(2.15, 2.8);
+        gameState.ballArc = THREE.MathUtils.randFloat(2.45, 3.25);
       }
 
       gameState.ballStart.set(THREE.MathUtils.randFloat(-1.7, 1.7), 0.45, -25.2);
-      const targetX = THREE.MathUtils.randFloat(-14.5, 3.0);
-      const targetZ = THREE.MathUtils.randFloat(-12.5, 11.5);
+      const targetX = gameState.ballType === '뜬공' ? THREE.MathUtils.randFloat(-18.0, 16.0) : THREE.MathUtils.randFloat(-14.5, 3.0);
+      const targetZ = gameState.ballType === '뜬공' ? THREE.MathUtils.randFloat(-12.0, 14.0) : THREE.MathUtils.randFloat(-12.5, 11.5);
       gameState.ballTarget.set(targetX, 0.22, targetZ);
       gameState.ball = makeBallMesh();
       gameState.ball.position.copy(gameState.ballStart);
@@ -549,7 +575,7 @@
       scene.add(gameState.targetMarker);
 
       setPhase('flight', `${gameState.ballType} 추적 중`);
-      setMessage('타구 발생!', '공의 낙하지점으로 이동한 뒤 가까워지면 클릭해 포구하세요.');
+      setMessage(`${gameState.ballType} 발생!`, gameState.ballType === '뜬공' ? '낙하지점 아래로 이동하고 R로 점프한 뒤 클릭해 포구하세요.' : '낙하지점으로 이동하고 공이 가까워지는 순간 클릭해 포구하세요.');
       ui.meter.style.width = '0%';
       ui.distance.textContent = '공과 거리 계산 중';
     }
@@ -558,21 +584,47 @@
     // 7. 포구 및 다이빙 판정
     // ------------------------------------------------------------
     function catchMetrics() {
-      if (!gameState.ball) return { distance: Infinity, vertical: Infinity, allowed: false };
+      if (!gameState.ball) return { distance: Infinity, vertical: Infinity, alignment: -1, allowed: false };
       const ball = gameState.ball.position;
       const distance = Math.hypot(ball.x - player.position.x, ball.z - player.position.z);
-      const gloveHeight = player.isDiving ? 0.55 : 0.82;
+      const gloveHeight = player.isDiving ? 0.55 : (player.isJumping ? 2.5 : 0.82);
       const vertical = Math.abs(ball.y - gloveHeight);
       const radius = player.isDiving ? DIVE_CATCH_RADIUS : NORMAL_CATCH_RADIUS;
-      const heightLimit = player.isDiving ? 1.75 : 1.05;
-      return { distance, vertical, allowed: distance <= radius && vertical <= heightLimit, radius };
+      const heightLimit = player.isDiving ? 1.75 : (player.isJumping ? 1.4 : 1.05);
+      const viewForward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+      const toBall = new THREE.Vector3(ball.x - player.position.x, 0, ball.z - player.position.z);
+      const alignment = toBall.lengthSq() > 0.001 ? viewForward.dot(toBall.normalize()) : 1;
+      // 거리·높이뿐 아니라 바라보는 방향과 클릭 타이밍도 만족해야 포구 가능
+      const timingRadius = player.isDiving ? 2.65 : 1.42;
+      const allowed = distance <= radius && distance <= timingRadius && vertical <= heightLimit && alignment >= 0.42;
+      return { distance, vertical, alignment, allowed, radius, heightLimit };
+    }
+
+    function attemptCatch() {
+      if (!gameState.ball || !['flight', 'catch'].includes(gameState.phase)) return;
+      const metrics = catchMetrics();
+      if (metrics.allowed) {
+        const perfect = metrics.distance < (player.isDiving ? 1.55 : 0.72)
+          && metrics.vertical < 0.38 && metrics.alignment > 0.82;
+        completeCatch(perfect ? 'PERFECT' : 'GOOD');
+      } else if (metrics.alignment < 0.42) {
+        showToast('공을 바라보고 포구해!');
+      } else if (metrics.distance > (player.isDiving ? 2.65 : 1.42)) {
+        showToast('공에 더 가까이 이동해!');
+      } else if (metrics.vertical > metrics.heightLimit) {
+        showToast(gameState.ballType === '뜬공' ? 'R 키로 점프해서 잡아!' : '글러브 높이를 맞춰 봐!');
+      } else {
+        showToast('타이밍이 맞지 않았어!');
+      }
     }
 
     function completeCatch(quality) {
       if (!['flight', 'catch'].includes(gameState.phase)) return;
       const wasDiving = player.isDiving;
       player.isDiving = false;
+      player.isJumping = false;
       player.diveElapsed = 0;
+      player.catchTimer = 0.34;
       gameState.catches++;
       const points = quality === 'PERFECT' ? 110 : (wasDiving ? 100 : 80);
       gameState.score += points;
@@ -586,9 +638,40 @@
       ui.distance.textContent = '1루를 바라보고 Enter';
     }
 
+    function presentPlayResult(title, detail) {
+      if (gameState.attempts >= ROUND_SIZE) {
+        const rate = gameState.attempts ? Math.round((gameState.catches / gameState.attempts) * 100) : 0;
+        ui.resultTitle.textContent = 'ROUND COMPLETE';
+        ui.resultText.textContent = `10번의 수비가 끝났어! 포구 ${gameState.catches}회 · 실패 ${gameState.misses}회 · 아웃 ${gameState.outs}회 · 포구 성공률 ${rate}% · 최종 점수 ${gameState.score}점. 마지막 플레이: ${title}.`;
+        ui.nextBtn.textContent = '새 경기 시작';
+      } else {
+        ui.resultTitle.textContent = title;
+        ui.resultText.textContent = `${detail} 현재 점수 ${gameState.score}점. 다음 수비를 준비해 봐.`;
+        ui.nextBtn.textContent = `다음 타구 (${gameState.attempts + 1} / ${ROUND_SIZE})`;
+      }
+      ui.result.style.display = 'grid';
+    }
+
+    function continueAfterResult() {
+      ui.result.style.display = 'none';
+      if (gameState.attempts >= ROUND_SIZE) {
+        gameState.catches = 0;
+        gameState.misses = 0;
+        gameState.outs = 0;
+        gameState.score = 0;
+        gameState.attempts = 0;
+        showToast('새로운 10회 수비를 시작해!');
+      }
+      setPhase('ready', '수비 대기');
+      updateStats();
+      requestLock();
+      startHit();
+    }
+
     function finishMiss() {
       if (!['flight', 'catch'].includes(gameState.phase)) return;
       player.isDiving = false;
+      player.isJumping = false;
       player.diveElapsed = 0;
       gameState.misses++;
       gameState.score = Math.max(0, gameState.score - 50);
@@ -597,9 +680,7 @@
       setPhase('result', '포구 실패');
       setMessage('MISSED BALL', '공을 놓쳤어. 다음 타구에서 위치와 타이밍을 조절해 봐.');
       showToast('아쉽다! 다음 타구에 도전해 보자.');
-      ui.resultTitle.textContent = 'MISSED BALL';
-      ui.resultText.textContent = `이번 타구를 놓쳤어. 공과의 거리를 좁히고 공이 가까워졌을 때 클릭해 봐. 현재 점수 ${gameState.score}점.`;
-      ui.result.style.display = 'grid';
+      presentPlayResult('MISSED BALL', '이번 타구를 놓쳤어. 공과의 거리를 좁히고, 공이 가까워졌을 때 방향을 맞춰 클릭해 봐.');
       ui.reticle.style.opacity = '0';
       clearBall();
       document.exitPointerLock?.();
@@ -621,26 +702,28 @@
 
     function finishThrow(isOut, accurate, timingLabel) {
       if (gameState.phase !== 'throwFlight') return;
+      let resultTitle;
+      let resultDetail;
       if (isOut) {
         gameState.outs++;
         gameState.score += 180;
+        resultTitle = 'OUT!';
+        resultDetail = `송구 성공! ${timingLabel} 타이밍과 정확한 조준으로 아웃을 만들었어.`;
         setMessage('OUT!', '정확한 송구로 타자 주자를 잡았어!');
-        ui.resultTitle.textContent = 'OUT!';
-        ui.resultText.textContent = `송구 성공! ${timingLabel} 타이밍과 정확한 조준으로 아웃을 만들었어. 현재 점수 ${gameState.score}점.`;
         showToast('멋진 송구! 아웃!');
       } else {
         gameState.score += accurate ? 20 : 0;
+        resultTitle = 'SAFE';
+        resultDetail = accurate
+          ? '송구는 정확했지만 주자가 먼저 1루에 도착했어.'
+          : '송구 방향 또는 타이밍이 빗나갔어. 1루를 정확히 조준하고 게이지 중앙에서 Enter를 눌러 봐.';
         setMessage('SAFE', accurate ? '송구는 정확했지만 주자가 먼저 도착했어.' : '송구가 빗나가 주자가 세이프야.');
-        ui.resultTitle.textContent = 'SAFE';
-        ui.resultText.textContent = accurate
-          ? `송구는 정확했지만 주자가 먼저 1루에 도착했어. 현재 점수 ${gameState.score}점.`
-          : `송구 방향 또는 타이밍이 빗나갔어. 1루를 정확히 조준하고 게이지 중앙에서 Enter를 눌러 봐. 현재 점수 ${gameState.score}점.`;
         showToast(accurate ? '아슬아슬하게 세이프!' : '송구 실책!');
       }
       runnerModel.visible = false;
       clearBall();
       setPhase('result', isOut ? '아웃' : '세이프');
-      ui.result.style.display = 'grid';
+      presentPlayResult(resultTitle, resultDetail);
       ui.reticle.style.opacity = '0';
       document.exitPointerLock?.();
       updateStats();
@@ -678,7 +761,7 @@
 
     function dive() {
       if (!gameState.ball || !['flight', 'catch'].includes(gameState.phase)) return;
-      if (player.isDiving || player.diveCooldown > 0) return;
+      if (player.isDiving || player.isJumping || player.diveCooldown > 0) return;
       player.isDiving = true;
       player.diveElapsed = 0;
       player.diveCooldown = 2.0;
@@ -693,6 +776,16 @@
       showToast('다이빙!');
     }
 
+    function jumpCatch() {
+      if (!gameState.ball || !['flight', 'catch'].includes(gameState.phase)) return;
+      if (player.isDiving || player.isJumping || player.jumpCooldown > 0) return;
+      player.isJumping = true;
+      player.jumpElapsed = 0;
+      player.jumpCooldown = 0.25;
+      setMessage('JUMP!', '공의 낙하지점에서 글러브를 맞춰 클릭해!');
+      showToast('점프 포구!');
+    }
+
     // ------------------------------------------------------------
     // 8. 키보드·마우스 조작
     // ------------------------------------------------------------
@@ -703,13 +796,13 @@
       gameState.started = true;
       ui.overlay.style.display = 'none';
       setPhase('ready', '수비 대기');
-      setMessage('수비 위치를 잡아라', 'F 키로 타구를 발생시키고 공을 향해 이동하세요.');
+      setMessage('수비 위치를 잡아라', 'F 키로 타구를 발생시키세요. 10번의 수비에서 아웃을 많이 만들어 보세요.');
       requestLock();
     });
     $('#howBtn').addEventListener('click', () => {
-      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nEnter: 1루 송구 게이지 시작 / Enter: 릴리스\nESC: 마우스 잠금 해제\n\n포구 후 마우스로 1루를 조준하고 Enter를 눌러 송구하세요.');
+      alert('WASD: 이동\nShift: 전력 질주\n마우스: 시점 회전\nF: 타구 발생\n클릭: 포구 시도\nSpace: 다이빙\nR: 점프 포구(뜬공)\nEnter: 1루 송구 게이지 시작 / Enter: 릴리스\nESC: 마우스 잠금 해제\n\n포구는 공과의 거리, 높이, 바라보는 방향, 클릭 타이밍이 모두 중요합니다. 포구 후 마우스로 1루를 조준하고 Enter를 눌러 송구하세요. 10회 수비 라운드입니다.');
     });
-    $('#nextBtn').addEventListener('click', startHit);
+    $('#nextBtn').addEventListener('click', continueAfterResult);
 
     document.addEventListener('pointerlockchange', () => {
       gameState.pointerLocked = document.pointerLockElement === renderer.domElement;
@@ -726,8 +819,9 @@
     document.addEventListener('keydown', (event) => {
       if (['Space', 'ArrowUp', 'ArrowDown'].includes(event.code)) event.preventDefault();
       keys.add(event.code);
-      if (event.code === 'KeyF' && !event.repeat) startHit();
+      if (event.code === 'KeyF' && !event.repeat && gameState.attempts < ROUND_SIZE) startHit();
       if (event.code === 'Space' && !event.repeat) dive();
+      if (event.code === 'KeyR' && !event.repeat) jumpCatch();
       if (event.code === 'Enter' && !event.repeat) {
         if (gameState.phase === 'throwAim') beginThrowTiming();
         else if (gameState.phase === 'throwTiming') releaseThrow();
@@ -770,14 +864,26 @@
       } else if (hasMovement) {
         player.position.addScaledVector(moveVector, speed * dt);
       }
+      if (player.isJumping) {
+        player.jumpElapsed += dt;
+        if (player.jumpElapsed >= player.jumpDuration) {
+          player.isJumping = false;
+          player.jumpElapsed = 0;
+        }
+      }
       player.position.x = THREE.MathUtils.clamp(player.position.x, -24, 24);
       player.position.z = THREE.MathUtils.clamp(player.position.z, -38, 22);
       player.diveCooldown = Math.max(0, player.diveCooldown - dt);
+      player.jumpCooldown = Math.max(0, player.jumpCooldown - dt);
+      player.catchTimer = Math.max(0, player.catchTimer - dt);
 
       let cameraHeight = 1.68;
       if (player.isDiving) {
         const p = THREE.MathUtils.clamp(player.diveElapsed / player.diveDuration, 0, 1);
         cameraHeight = 1.68 - Math.sin(p * Math.PI) * 1.17;
+      } else if (player.isJumping) {
+        const p = THREE.MathUtils.clamp(player.jumpElapsed / player.jumpDuration, 0, 1);
+        cameraHeight = 1.68 + Math.sin(p * Math.PI) * 1.35;
       }
       const bobAmount = hasMovement && !player.isDiving ? Math.sin(elapsed * (sprint ? 15 : 11)) * 0.035 : 0;
       camera.position.set(player.position.x, cameraHeight + bobAmount, player.position.z);
@@ -785,11 +891,28 @@
       camera.rotation.y = player.yaw;
       camera.rotation.x = player.pitch + (player.isDiving ? -0.12 : 0);
 
-      cameraRig.position.y = bobAmount + (player.isDiving ? -0.18 : 0);
+      cameraRig.position.y = bobAmount + (player.isDiving ? -0.18 : (player.isJumping ? 0.10 : 0));
       cameraRig.rotation.z = player.isDiving ? -0.48 : (hasMovement ? Math.sin(elapsed * 10) * 0.035 : 0);
-      cameraRig.rotation.x = player.isDiving ? -0.24 : 0;
-      glove.rotation.x = player.isDiving ? -0.28 : THREE.MathUtils.damp(glove.rotation.x, 0, 8, dt);
-      glove.position.z = player.isDiving ? -0.82 : THREE.MathUtils.damp(glove.position.z, -1.02, 7, dt);
+      cameraRig.rotation.x = player.isDiving ? -0.24 : (player.isJumping ? 0.12 : 0);
+      glove.rotation.x = player.isDiving ? -0.28 : (player.isJumping ? -0.55 : THREE.MathUtils.damp(glove.rotation.x, 0, 8, dt));
+      const gloveReach = player.isDiving ? -0.72 : (player.isJumping ? -0.78 : (player.catchTimer > 0 ? -0.72 : -1.02));
+      glove.position.z = THREE.MathUtils.damp(glove.position.z, gloveReach, 10, dt);
+      glove.position.x = THREE.MathUtils.damp(glove.position.x, player.catchTimer > 0 ? -0.18 : -0.47, 10, dt);
+    }
+
+    function updateBatter(dt) {
+      if (batterSwingTimer < 0) return;
+      batterSwingTimer += dt;
+      const p = THREE.MathUtils.clamp(batterSwingTimer / 0.52, 0, 1);
+      const swing = Math.sin(p * Math.PI);
+      batPivot.rotation.y = -0.35 + swing * 1.65;
+      batPivot.rotation.z = -swing * 0.28;
+      batterModel.rotation.y = Math.PI * 0.1 + swing * 0.16;
+      if (p >= 1) {
+        batterSwingTimer = -1;
+        batPivot.rotation.set(0, -0.35, 0);
+        batterModel.rotation.y = Math.PI * 0.1;
+      }
     }
 
     function updateRunner(dt) {
@@ -798,12 +921,12 @@
       gameState.runnerProgress = Math.min(1, gameState.runnerProgress + dt / gameState.runnerDuration);
       const p = gameState.runnerProgress;
       runnerModel.position.lerpVectors(runnerStart, runnerTarget, p);
-      runnerModel.position.y = 0;
+      runnerModel.position.y = Math.abs(Math.sin(gameState.runnerProgress * 28)) * 0.07;
+      runnerModel.rotation.y = -Math.PI * 0.5 + Math.sin(gameState.runnerProgress * 28) * 0.035;
     }
 
     function updateBall(dt) {
-      if (!gameState.ball) return;
-
+      // 송구 타이밍 게이지는 포구 후 공 오브젝트가 비워져도 계속 갱신되어야 함
       if (gameState.phase === 'throwTiming') {
         gameState.throwClock += dt;
         gameState.throwMeterValue = (Math.sin(gameState.throwClock * 3.35 - Math.PI / 2) + 1) / 2;
@@ -815,6 +938,7 @@
         ui.distance.textContent = `1루 조준: ${Math.round(Math.max(0, alignment) * 100)}% · Enter로 릴리스`;
         return;
       }
+      if (!gameState.ball) return;
 
       if (gameState.phase === 'throwFlight') {
         gameState.throwAge += dt;
@@ -841,6 +965,8 @@
       let y;
       if (gameState.ballType === '강한 타구') {
         y = 0.22 + Math.sin(Math.PI * t) * gameState.ballArc;
+      } else if (gameState.ballType === '뜬공') {
+        y = 0.22 + Math.sin(Math.PI * t) * gameState.ballArc;
       } else if (gameState.ballType === '느린 타구') {
         y = 0.22 + Math.abs(Math.sin(t * Math.PI * 4.5)) * gameState.ballArc * (1 - t) * 0.55;
       } else {
@@ -862,13 +988,13 @@
 
       const metrics = catchMetrics();
       const catchRadius = player.isDiving ? DIVE_CATCH_RADIUS : NORMAL_CATCH_RADIUS;
-      const inReach = metrics.distance < catchRadius * 1.8 && metrics.vertical < (player.isDiving ? 2.2 : 1.45);
-      setPhase(inReach ? 'catch' : 'flight', inReach ? '포구 기회! 클릭!' : `${gameState.ballType} 추적 중`);
-      ui.distance.textContent = `공과 거리: ${metrics.distance.toFixed(1)}m`;
+      const inReach = metrics.distance < catchRadius * 1.8 && metrics.vertical < (player.isDiving ? 2.2 : (player.isJumping ? 2.2 : 1.45));
+      setPhase(inReach ? 'catch' : 'flight', inReach ? (metrics.allowed ? '포구 기회! 클릭!' : '위치·방향을 맞춰라') : `${gameState.ballType} 추적 중`);
+      ui.distance.textContent = `공과 거리: ${metrics.distance.toFixed(1)}m · 조준 ${Math.round(Math.max(0, metrics.alignment) * 100)}%`;
       const timing = THREE.MathUtils.clamp(1 - metrics.distance / (catchRadius * 2.6), 0, 1);
       ui.meter.style.width = `${timing * 100}%`;
       ui.reticle.style.opacity = inReach ? '1' : '0';
-      ui.reticle.style.borderColor = metrics.allowed ? '#c6ef79' : '#f2ca75';
+      ui.reticle.style.borderColor = metrics.allowed ? '#6bd5a1' : '#f2ca75';
       if (gameState.ballAge >= gameState.ballDuration) finishMiss();
     }
 
@@ -878,6 +1004,8 @@
       const elapsed = clock.elapsedTime;
       if (gameState.started) {
         updatePlayer(dt, elapsed);
+        updateStats();
+        updateBatter(dt);
         updateRunner(dt);
         updateBall(dt);
         if (gameState.toastTimer > 0) {
